@@ -9,19 +9,19 @@ This comprehensive knowledge base contains **everything** you need to create, de
 <!-- CLAUDE_SKIP_END -->
 
 ### Complete Documentation (12 Guides + Quick Start)
-- ✅ **00_MASTER_PROMPT.md** - Master overview and entry point
-- ✅ **01_API_Reference.md** - WoW API functions organized by category
-- ✅ **02_Event_System.md** - Complete event system documentation
-- ✅ **03_UI_Framework.md** - XML, frames, widgets, templates, mixins ⭐
-- ✅ **04_Addon_Structure.md** - TOC files, file organization, load order
-- ✅ **05_Patterns_And_Best_Practices.md** - Coding patterns, performance, best practices ⭐
-- ✅ **06_Data_Persistence.md** - Saved variables, database management ⭐
-- ✅ **07_Blizzard_UI_Examples.md** - Real working code examples ⭐
-- ✅ **08_Community_Addon_Patterns.md** - Ace3, LibStub, community frameworks ⭐
-- ✅ **09_Addon_Libraries_Guide.md** - Complete library reference (LibStub, Ace3, LibDataBroker, etc.) ⭐
-- ✅ **10_Advanced_Techniques.md** - Production-level patterns (cross-client, performance, multi-addon) ⭐
-- ✅ **11_API_Migration_Guide.md** - API version migration, compatibility wrappers, update strategies ⭐ NEW!
-- ✅ **QUICK_START_GUIDE.md** - Get started in 5 minutes ⭐
+- ✅ **[00_MASTER_PROMPT.md](00_MASTER_PROMPT.md)** - Master overview and entry point
+- ✅ **[01_API_Reference.md](01_API_Reference.md)** - WoW API functions organized by category
+- ✅ **[02_Event_System.md](02_Event_System.md)** - Complete event system documentation
+- ✅ **[03_UI_Framework.md](03_UI_Framework.md)** - XML, frames, widgets, templates, mixins ⭐
+- ✅ **[04_Addon_Structure.md](04_Addon_Structure.md)** - TOC files, file organization, load order
+- ✅ **[05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)** - Coding patterns, performance, best practices ⭐
+- ✅ **[06_Data_Persistence.md](06_Data_Persistence.md)** - Saved variables, database management ⭐
+- ✅ **[07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md)** - Real working code examples ⭐
+- ✅ **[08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)** - Ace3, LibStub, community frameworks ⭐
+- ✅ **[09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md)** - Complete library reference (LibStub, Ace3, LibDataBroker, etc.) ⭐
+- ✅ **[10_Advanced_Techniques.md](10_Advanced_Techniques.md)** - Production-level patterns (cross-client, performance, multi-addon) ⭐
+- ✅ **[11_API_Migration_Guide.md](11_API_Migration_Guide.md)** - API version migration, compatibility wrappers, update strategies ⭐ NEW!
+- ✅ **[QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)** - Get started in 5 minutes ⭐
 
 ### Reference Data
 - **API Documentation** - 513 API files analyzed (`api_extracted/`)
@@ -90,49 +90,49 @@ This comprehensive knowledge base contains **everything** you need to create, de
 ### I want to...
 
 **Create my first addon**
-→ Read: `QUICK_START_GUIDE.md` → `04_Addon_Structure.md`
+→ Read: [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md) → [04_Addon_Structure.md](04_Addon_Structure.md)
 
 **Build action buttons**
-→ Read: `03_UI_Framework.md` → `07_Blizzard_UI_Examples.md` (Action Buttons section)
+→ Read: [03_UI_Framework.md](03_UI_Framework.md) → [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md) (Action Buttons section)
 
 **Save addon settings**
-→ Read: `06_Data_Persistence.md` → `08_Community_Addon_Patterns.md` (Profile Systems)
+→ Read: [06_Data_Persistence.md](06_Data_Persistence.md) → [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md) (Profile Systems)
 
 **Create a scrolling list**
-→ Read: `03_UI_Framework.md` (ScrollBox) → `07_Blizzard_UI_Examples.md` (Scroll Frames)
+→ Read: [03_UI_Framework.md](03_UI_Framework.md) (ScrollBox) → [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md) (Scroll Frames)
 
 **Handle events**
-→ Read: `02_Event_System.md` → `05_Patterns_And_Best_Practices.md` (Event-Driven)
+→ Read: [02_Event_System.md](02_Event_System.md) → [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md) (Event-Driven)
 
 **Show tooltips**
-→ Read: `07_Blizzard_UI_Examples.md` (Tooltips section)
+→ Read: [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md) (Tooltips section)
 
 **Use mixins**
-→ Read: `05_Patterns_And_Best_Practices.md` (Mixin Patterns) → `03_UI_Framework.md`
+→ Read: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md) (Mixin Patterns) → [03_UI_Framework.md](03_UI_Framework.md)
 
 **Optimize performance**
-→ Read: `05_Patterns_And_Best_Practices.md` (Performance section)
+→ Read: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md) (Performance section)
 
 **Use Ace3 framework**
-→ Read: `09_Addon_Libraries_Guide.md` (Ace3 Library Suite) → `08_Community_Addon_Patterns.md`
+→ Read: [09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md) (Ace3 Library Suite) → [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
 
 **Add minimap icon**
-→ Read: `09_Addon_Libraries_Guide.md` (LibDBIcon section)
+→ Read: [09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md) (LibDBIcon section)
 
 **Use libraries (LibStub, LibDataBroker, etc.)**
-→ Read: `09_Addon_Libraries_Guide.md` (comprehensive library guide)
+→ Read: [09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md) (comprehensive library guide)
 
 **Support multiple WoW versions (Classic, Retail, etc.)**
-→ Read: `10_Advanced_Techniques.md` (Cross-Client Compatibility)
+→ Read: [10_Advanced_Techniques.md](10_Advanced_Techniques.md) (Cross-Client Compatibility)
 
 **Optimize for production/large-scale addons**
-→ Read: `10_Advanced_Techniques.md` (Performance, Event Bucketing, Multi-Addon)
+→ Read: [10_Advanced_Techniques.md](10_Advanced_Techniques.md) (Performance, Event Bucketing, Multi-Addon)
 
 **Update addon for new WoW patch/expansion**
-→ Read: `11_API_Migration_Guide.md` (API changes, migration patterns, compatibility)
+→ Read: [11_API_Migration_Guide.md](11_API_Migration_Guide.md) (API changes, migration patterns, compatibility)
 
 **Track quests**
-→ Read: `07_Blizzard_UI_Examples.md` (Quest Tracking) → `01_API_Reference.md`
+→ Read: [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md) (Quest Tracking) → [01_API_Reference.md](01_API_Reference.md)
 
 <!-- CLAUDE_SKIP_END -->
 ## 🔍 Finding Information
@@ -141,51 +141,51 @@ This comprehensive knowledge base contains **everything** you need to create, de
 ### By Topic
 
 **UI Framework & Layout:**
-- XML structure: `03_UI_Framework.md`
-- Templates: `03_UI_Framework.md`
-- Mixins: `05_Patterns_And_Best_Practices.md`
-- ScrollBoxes: `03_UI_Framework.md` + `07_Blizzard_UI_Examples.md`
-- Layout frames: `03_UI_Framework.md`
+- XML structure: [03_UI_Framework.md](03_UI_Framework.md)
+- Templates: [03_UI_Framework.md](03_UI_Framework.md)
+- Mixins: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
+- ScrollBoxes: [03_UI_Framework.md](03_UI_Framework.md) + [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md)
+- Layout frames: [03_UI_Framework.md](03_UI_Framework.md)
 
 **Data Management:**
-- Saved variables: `06_Data_Persistence.md`
-- Profiles: `08_Community_Addon_Patterns.md`
-- Database patterns: `06_Data_Persistence.md`
-- Migrations: `06_Data_Persistence.md`
+- Saved variables: [06_Data_Persistence.md](06_Data_Persistence.md)
+- Profiles: [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
+- Database patterns: [06_Data_Persistence.md](06_Data_Persistence.md)
+- Migrations: [06_Data_Persistence.md](06_Data_Persistence.md)
 
 **Code Patterns:**
-- Mixins: `05_Patterns_And_Best_Practices.md`
-- Events: `02_Event_System.md` + `05_Patterns_And_Best_Practices.md`
-- State management: `05_Patterns_And_Best_Practices.md`
-- Performance: `05_Patterns_And_Best_Practices.md`
+- Mixins: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
+- Events: [02_Event_System.md](02_Event_System.md) + [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
+- State management: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
+- Performance: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
 
 **API Usage:**
-- API categories: `01_API_Reference.md`
-- API wrappers: `05_Patterns_And_Best_Practices.md`
-- C_* namespaces: `01_API_Reference.md`
+- API categories: [01_API_Reference.md](01_API_Reference.md)
+- API wrappers: [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
+- C_* namespaces: [01_API_Reference.md](01_API_Reference.md)
 
 **Community Patterns:**
-- Ace3: `08_Community_Addon_Patterns.md`
-- LibStub: `08_Community_Addon_Patterns.md`
-- Localization: `08_Community_Addon_Patterns.md`
-- Slash commands: `08_Community_Addon_Patterns.md`
+- Ace3: [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
+- LibStub: [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
+- Localization: [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
+- Slash commands: [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
 
 ### By File Type
 
 **Looking at Blizzard source code?**
-- Find addon categories: `file_lists/UI_Core_Systems.md`
-- Most important addon: `Blizzard_SharedXML` (see `file_lists/UI_Core_Systems.md`)
-- Action buttons: `Blizzard_ActionBar` (see `07_Blizzard_UI_Examples.md`)
-- Buffs/debuffs: `Blizzard_BuffFrame` (see `07_Blizzard_UI_Examples.md`)
+- Find addon categories: [file_lists/UI_Core_Systems.md](file_lists/UI_Core_Systems.md)
+- Most important addon: `Blizzard_SharedXML` (see [file_lists/UI_Core_Systems.md](file_lists/UI_Core_Systems.md))
+- Action buttons: `Blizzard_ActionBar` (see [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md))
+- Buffs/debuffs: `Blizzard_BuffFrame` (see [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md))
 
 **Looking for API functions?**
-- Browse by category: `01_API_Reference.md`
-- Full API list: `api_extracted/00_API_INDEX.md`
-- By category: `api_extracted/00_API_BY_CATEGORY.md`
+- Browse by category: [01_API_Reference.md](01_API_Reference.md)
+- Full API list: [api_extracted/00_API_INDEX.md](api_extracted/00_API_INDEX.md)
+- By category: [api_extracted/00_API_BY_CATEGORY.md](api_extracted/00_API_BY_CATEGORY.md)
 
 **Looking for events?**
-- Event system: `02_Event_System.md`
-- Full event list: `events_extracted/00_EVENTS_INDEX.md`
+- Event system: [02_Event_System.md](02_Event_System.md)
+- Full event list: [events_extracted/00_EVENTS_INDEX.md](events_extracted/00_EVENTS_INDEX.md)
 
 ## 📁 Directory Structure
 
@@ -227,9 +227,9 @@ WoW_Addon_Dev_Knowledge_Base/
 <!-- CLAUDE_SKIP_START -->
 ### Best Practices
 1. ✅ **Start small** - Begin with a simple addon
-2. ✅ **Study examples** - Read Blizzard's code in `07_Blizzard_UI_Examples.md`
-3. ✅ **Use patterns** - Follow patterns in `05_Patterns_And_Best_Practices.md`
-4. ✅ **Save properly** - Read `06_Data_Persistence.md` before saving data
+2. ✅ **Study examples** - Read Blizzard's code in [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md)
+3. ✅ **Use patterns** - Follow patterns in [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
+4. ✅ **Save properly** - Read [06_Data_Persistence.md](06_Data_Persistence.md) before saving data
 5. ✅ **Test frequently** - Use `/reload` often during development
 
 ### Common Mistakes to Avoid
@@ -296,37 +296,37 @@ WTF\Account\[Account]\[Server]\[Character]\SavedVariables\
 <!-- CLAUDE_SKIP_START -->
 
 ### Week 1: Basics
-- [ ] Read `QUICK_START_GUIDE.md`
+- [ ] Read [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)
 - [ ] Create your first addon (5-minute tutorial)
-- [ ] Read `00_MASTER_PROMPT.md`
-- [ ] Read `04_Addon_Structure.md`
+- [ ] Read [00_MASTER_PROMPT.md](00_MASTER_PROMPT.md)
+- [ ] Read [04_Addon_Structure.md](04_Addon_Structure.md)
 - [ ] Experiment with slash commands
 
 ### Week 2: UI & Events
-- [ ] Read `02_Event_System.md`
-- [ ] Read `03_UI_Framework.md`
+- [ ] Read [02_Event_System.md](02_Event_System.md)
+- [ ] Read [03_UI_Framework.md](03_UI_Framework.md)
 - [ ] Create a simple frame
 - [ ] Handle PLAYER_LOGIN event
-- [ ] Read `07_Blizzard_UI_Examples.md`
+- [ ] Read [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md)
 
 ### Week 3: Data & Patterns
-- [ ] Read `06_Data_Persistence.md`
+- [ ] Read [06_Data_Persistence.md](06_Data_Persistence.md)
 - [ ] Implement saved variables
-- [ ] Read `05_Patterns_And_Best_Practices.md`
+- [ ] Read [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md)
 - [ ] Refactor code using mixins
 - [ ] Optimize performance
 
 ### Week 4: Advanced
-- [ ] Read `08_Community_Addon_Patterns.md`
-- [ ] Read `09_Addon_Libraries_Guide.md`
+- [ ] Read [08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)
+- [ ] Read [09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md)
 - [ ] Try Ace3 framework
 - [ ] Create scrolling lists
 - [ ] Implement profiles
 - [ ] Study Blizzard source code
 
 ### Week 5+: Production-Level
-- [ ] Read `10_Advanced_Techniques.md`
-- [ ] Read `11_API_Migration_Guide.md`
+- [ ] Read [10_Advanced_Techniques.md](10_Advanced_Techniques.md)
+- [ ] Read [11_API_Migration_Guide.md](11_API_Migration_Guide.md)
 - [ ] Implement cross-client compatibility
 - [ ] Add performance profiling
 - [ ] Optimize with event bucketing
@@ -369,9 +369,9 @@ This knowledge base includes:
 ## 🎯 Next Steps
 
 <!-- CLAUDE_SKIP_START -->
-1. **New Developer?** → Start with `QUICK_START_GUIDE.md`
+1. **New Developer?** → Start with [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)
 2. **Need specific feature?** → Use the "I want to..." section above
-3. **Want deep knowledge?** → Read all guides in order (00-08)
+3. **Want deep knowledge?** → Read all 12 guides in order ([00_MASTER_PROMPT.md](00_MASTER_PROMPT.md) through [11_API_Migration_Guide.md](11_API_Migration_Guide.md))
 4. **Ready to code?** → Reference guides as needed while building
 
 ---
@@ -389,4 +389,4 @@ This knowledge base includes:
 <!-- CLAUDE_SKIP_END -->
 **Happy Addon Development!** 🚀
 
-For questions about using this knowledge base, refer to `00_MASTER_PROMPT.md` or `QUICK_START_GUIDE.md`.
+For questions about using this knowledge base, refer to [00_MASTER_PROMPT.md](00_MASTER_PROMPT.md) or [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md).
