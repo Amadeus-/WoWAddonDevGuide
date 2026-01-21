@@ -4,11 +4,13 @@
 1. [XML UI Structure and Patterns](#xml-ui-structure-and-patterns)
 2. [Frame Scripting Patterns](#frame-scripting-patterns)
 3. [Widget and Region Types](#widget-and-region-types)
-4. [Common Blizzard Templates](#common-blizzard-templates)
-5. [Frame Pooling and Object Reuse](#frame-pooling-and-object-reuse)
-6. [Data Provider Pattern](#data-provider-pattern)
-7. [Practical Examples](#practical-examples)
-8. [Best Practices](#best-practices)
+4. [New Widget Methods (11.1.5 - 12.0.0)](#new-widget-methods-1115---1200)
+5. [Secret Values System (12.0.0)](#secret-values-system-1200)
+6. [Common Blizzard Templates](#common-blizzard-templates)
+7. [Frame Pooling and Object Reuse](#frame-pooling-and-object-reuse)
+8. [Data Provider Pattern](#data-provider-pattern)
+9. [Practical Examples](#practical-examples)
+10. [Best Practices](#best-practices)
 
 ---
 
@@ -489,6 +491,399 @@ BOTTOMLEFT --- BOTTOM --- BOTTOMRIGHT
 
 ---
 
+## New Widget Methods (11.1.5 - 12.0.0)
+
+This section covers new widget methods added in recent patches. For the secret values system, see the dedicated section below.
+
+### FrameScriptObject Methods
+
+**Secret Value Methods (12.0.0):**
+```lua
+-- Check if any secret aspects are set on this object
+local hasAnySecret = frame:HasAnySecretAspect()
+
+-- Check for a specific secret aspect
+local hasTextSecret = frame:HasSecretAspect("Text")
+local hasValueSecret = frame:HasSecretAspect("Value")
+
+-- Check if the object has any secret values
+local hasSecretValues = frame:HasSecretValues()
+
+-- Check/Set prevention of secret values
+local isPreventing = frame:IsPreventingSecretValues()
+frame:SetPreventSecretValues(true)  -- Block secrets from propagating
+
+-- Clear all secret aspects and reset to defaults
+frame:SetToDefaults()
+```
+
+### ScriptRegion Methods
+
+```lua
+-- Check if anchoring involves secret values (12.0.0)
+local isSecretAnchored = region:IsAnchoringSecret()
+
+-- Clear all scripts from this region (11.2.0)
+region:ClearScripts()
+
+-- Check button pass-through state (11.2.0)
+local passThrough = region:ShouldButtonPassThrough()
+```
+
+### Region Methods
+
+**Secret Value Display (12.0.0):**
+```lua
+-- Set alpha based on boolean (for secret values)
+-- When value is secret, this allows conditional visibility
+region:SetAlphaFromBoolean(shouldShow)
+
+-- Set vertex color based on boolean (for secret values)
+region:SetVertexColorFromBoolean(shouldShow)
+```
+
+### Frame Methods
+
+**Event Callbacks (12.0.0):**
+```lua
+-- Register a callback for an event (alternative to OnEvent script)
+frame:RegisterEventCallback("PLAYER_ENTERING_WORLD", function(event, ...)
+    print("Player entered world!")
+end)
+
+-- Register a unit event callback
+frame:RegisterUnitEventCallback("UNIT_HEALTH", function(event, unit)
+    print(unit, "health changed")
+end, "player")
+```
+
+**Attribute Management (11.2.0):**
+```lua
+-- Clear a specific attribute
+frame:ClearAttribute("unit")
+
+-- Clear all attributes
+frame:ClearAttributes()
+```
+
+**Alpha Gradients (11.1.5, 11.2.0):**
+```lua
+-- Apply alpha gradient (fades from startAlpha to endAlpha across the frame)
+frame:SetAlphaGradient(startX, startY, endX, endY)
+
+-- Check if frame has an alpha gradient
+local hasGradient = frame:HasAlphaGradient()  -- 11.2.0
+
+-- Clear the alpha gradient
+frame:ClearAlphaGradient()  -- 11.2.0
+```
+
+**Hyperlink Propagation (11.0.5):**
+```lua
+-- Check if hyperlinks propagate to parent
+local propagates = frame:DoesHyperlinkPropagateToParent()
+
+-- Enable/disable hyperlink propagation to parent frame
+frame:SetHyperlinkPropagateToParent(true)
+```
+
+**Other Frame Methods:**
+```lua
+-- Check if frame is a framebuffer (11.2.0)
+local isBuffer = frame:IsFrameBuffer()
+
+-- Check if highlight is locked (11.2.0)
+local isLocked = frame:IsHighlightLocked()
+
+-- Get highest frame level among children (11.1.7)
+local highestLevel = frame:GetHighestFrameLevel()
+
+-- Control whether children affect bounds calculation (12.0.0)
+local ignoring = frame:IsIgnoringChildrenForBounds()
+frame:SetIgnoringChildrenForBounds(true)
+```
+
+### FontString Methods
+
+**Font Height (11.2.0):**
+```lua
+-- Get the actual rendered font height
+local height = fontString:GetFontHeight()
+
+-- Set the font height directly
+fontString:SetFontHeight(14)
+```
+
+**Scale Animation Mode (12.0.0):**
+```lua
+-- Get current scale animation mode
+local mode = fontString:GetScaleAnimationMode()
+
+-- Set scale animation mode
+fontString:SetScaleAnimationMode(mode)
+```
+
+**Alpha Gradients (11.2.0):**
+```lua
+-- Get current alpha gradient settings
+local startX, startY, endX, endY = fontString:GetAlphaGradient()
+
+-- Clear the alpha gradient
+fontString:ClearAlphaGradient()
+```
+
+**Color Overrides (11.1.5):**
+```lua
+-- Callback when colors are updated (e.g., item quality colors changed)
+function MyFontStringMixin:OnColorsUpdated()
+    -- Refresh any cached color values
+    self:UpdateTextColor()
+end
+```
+
+### StatusBar Methods
+
+**Interpolated Values (12.0.0):**
+```lua
+-- Get the current interpolated value (during smooth transitions)
+local interpolatedValue = statusBar:GetInterpolatedValue()
+
+-- Check if currently interpolating
+local isInterpolating = statusBar:IsInterpolating()
+
+-- Jump directly to target value (skip interpolation)
+statusBar:SetToTargetValue(100)
+```
+
+**Timer Duration (12.0.0):**
+```lua
+-- Get current timer duration
+local duration = statusBar:GetTimerDuration()
+
+-- Set timer duration (used with secret duration values)
+statusBar:SetTimerDuration(durationObject)
+```
+
+### Cooldown Methods
+
+**Countdown FontString (12.0.0):**
+```lua
+-- Get the FontString used for countdown display
+local fontString = cooldown:GetCountdownFontString()
+```
+
+**Duration Objects (12.0.0):**
+```lua
+-- Set cooldown from a Duration object (for secret durations)
+cooldown:SetCooldownFromDurationObject(durationObject)
+
+-- Set cooldown from expiration time
+cooldown:SetCooldownFromExpirationTime(expirationTime)
+```
+
+**Cooldown Control:**
+```lua
+-- Pause/unpause the cooldown animation (12.0.0)
+cooldown:SetPaused(true)
+
+-- Set the edge color (11.2.0)
+cooldown:SetEdgeColor(r, g, b, a)
+
+-- Get/Set minimum countdown duration for text display (11.2.5)
+local minDuration = cooldown:GetMinimumCountdownDuration()
+cooldown:SetMinimumCountdownDuration(3)  -- Only show countdown for 3+ seconds
+```
+
+### TextureBase Methods
+
+```lua
+-- Reset texture coordinates to default (12.0.0)
+texture:ResetTexCoord()
+
+-- Set texture to a specific sprite sheet cell (12.0.0)
+texture:SetSpriteSheetCell(cellIndex)
+
+-- Clear all vertex offsets (11.2.0)
+texture:ClearVertexOffsets()
+```
+
+### Model and ModelScene Methods
+
+```lua
+-- Set gradient mask on model (11.2.7)
+model:SetGradientMask(texturePath, blendMode)
+
+-- ModelSceneActor methods (11.2.7)
+modelSceneActor:SetGradientMask(texturePath, blendMode)
+
+-- Check collision bounds preference (11.2.7)
+local prefersCollision = modelSceneActor:IsPreferringModelCollisionBounds()
+
+-- Set collision bounds preference (11.2.7)
+modelSceneActor:SetPreferModelCollisionBounds(true)
+```
+
+---
+
+## Secret Values System (12.0.0)
+
+The Secret Values system was introduced in 12.0.0 (Midnight) to hide sensitive information from addons while still allowing the UI to display it. This is used for competitive integrity features.
+
+### Understanding Secret Values
+
+Secret values are special protected data types that:
+- Cannot be read by addon code directly
+- Can be displayed in UI widgets (FontString, StatusBar, etc.)
+- Propagate through the UI hierarchy
+- Mark widgets with "secret aspects" when applied
+
+### Secret Aspects
+
+When a secret value is applied to a widget, it gains a "secret aspect":
+
+```lua
+-- Check if a FontString has secret text
+if fontString:HasSecretAspect("Text") then
+    -- The text was set from a secret value
+    -- Calling GetText() will return nil or empty
+end
+
+-- Check if a StatusBar has secret values
+if statusBar:HasAnySecretAspect() then
+    -- GetValue() may return unexpected results
+end
+
+-- Check if any object has secrets
+if frame:HasSecretValues() then
+    -- Some child elements contain secret data
+end
+```
+
+### Secret Anchoring
+
+When a frame's position depends on secret values, it becomes "secret anchored":
+
+```lua
+-- Check if anchoring involves secrets
+if region:IsAnchoringSecret() then
+    -- Position cannot be reliably determined
+end
+```
+
+### Preventing Secret Values
+
+Some UI elements should never display secrets:
+
+```lua
+-- Prevent secrets from being set on this element
+frame:SetPreventSecretValues(true)
+
+-- Check if prevention is enabled
+local isPreventing = frame:IsPreventingSecretValues()
+
+-- Reset to defaults (clears secret aspects)
+frame:SetToDefaults()
+```
+
+### Boolean Display Methods
+
+For conditional UI based on secret values:
+
+```lua
+-- Show/hide based on a boolean that may be secret
+region:SetAlphaFromBoolean(shouldBeVisible)
+
+-- Color based on a boolean that may be secret
+region:SetVertexColorFromBoolean(isActive)
+```
+
+### Curve Objects (12.0.0)
+
+Curve objects allow animated values that may contain secrets:
+
+```lua
+-- Create a curve for value interpolation
+local curve = C_CurveUtil.CreateCurve()
+curve:AddControlPoint(0, 0)      -- At input 0, output 0
+curve:AddControlPoint(0.5, 0.8)  -- At input 0.5, output 0.8
+curve:AddControlPoint(1, 1)      -- At input 1, output 1
+
+-- Use with StatusBar for smooth transitions
+statusBar:SetMinMaxValues(curve)
+```
+
+### ColorCurve Objects (12.0.0)
+
+Color curves allow color transitions with secret support:
+
+```lua
+-- Create a color curve
+local colorCurve = C_CurveUtil.CreateColorCurve()
+colorCurve:AddColorStop(0, 1, 0, 0, 1)    -- Red at start
+colorCurve:AddColorStop(0.5, 1, 1, 0, 1)  -- Yellow at middle
+colorCurve:AddColorStop(1, 0, 1, 0, 1)    -- Green at end
+
+-- Apply to texture or other color-supporting widgets
+```
+
+### Duration Objects (12.0.0)
+
+Duration objects encapsulate time values that may be secret:
+
+```lua
+-- Create a duration object
+local duration = C_DurationUtil.CreateDuration()
+duration:SetStartTime(GetTime())
+duration:SetDuration(10)  -- 10 seconds
+
+-- Use with Cooldown frame
+cooldown:SetCooldownFromDurationObject(duration)
+
+-- Use with StatusBar timer
+statusBar:SetTimerDuration(duration)
+```
+
+### Color Overrides (11.1.5)
+
+Item quality colors can now be user-configured:
+
+```lua
+-- PREFERRED: Use ColorManager for item quality colors
+local color = ColorManager.GetColorDataForItemQuality(qualityID)
+
+-- The ITEM_QUALITY_COLORS table may not reflect user preferences
+-- Using the markup is now preferred:
+local text = "|cnIQ" .. quality .. ":" .. itemName .. "|r"
+-- Example: "|cnIQ4:Epic Sword|r" for epic quality text
+
+-- FontString callback for color updates
+function MyFontStringMixin:OnColorsUpdated()
+    -- Called when ITEM_QUALITY_COLORS or other color settings change
+    self:RefreshColors()
+end
+```
+
+### Font Scaling (11.2.0)
+
+New accessibility features for font scaling:
+
+```lua
+-- User font scale is controlled by the userFontScale CVar
+-- Check if a font can be user-scaled via FontScriptInfo structure
+
+-- Get and set font height directly
+local height = fontString:GetFontHeight()
+fontString:SetFontHeight(16)  -- Set to 16 pixels
+
+-- FontScriptInfo now includes canBeUserScaled field
+local fontInfo = fontString:GetFontObject():GetFontInfo()
+if fontInfo.canBeUserScaled then
+    -- This font will scale with user preferences
+end
+```
+
+---
+
 ## Common Blizzard Templates
 
 ### Layout Frame Templates
@@ -636,6 +1031,37 @@ end
 ```
 
 **Source:** `Blizzard_SharedXML\HybridScrollFrame.xml`, `Blizzard_SharedXML\HybridScrollFrame.lua`
+
+### StaticPopup (Updated 11.2.0)
+
+**Important Changes:**
+- `StaticPopup_DisplayedFrames` table removed in 11.2.0
+- `STATICPOPUP_NUMDIALOGS` constant removed in 11.2.0
+- Use `StaticPopup_ForEachShownDialog()` instead for iterating dialogs
+
+**Old Pattern (Pre-11.2.0):**
+```lua
+-- DEPRECATED - Do not use
+for i = 1, STATICPOPUP_NUMDIALOGS do
+    local dialog = _G["StaticPopup" .. i]
+    if dialog and dialog:IsShown() then
+        -- process dialog
+    end
+end
+```
+
+**New Pattern (11.2.0+):**
+```lua
+-- Iterate all shown dialogs
+StaticPopup_ForEachShownDialog(function(dialog, data)
+    -- dialog is the frame
+    -- data is the popup data
+    print("Dialog shown:", dialog.which)
+end)
+
+-- Check if a specific dialog is shown
+local isShown = StaticPopup_Visible("CONFIRM_DELETE_ITEM")
+```
 
 ### Backdrop and NineSlice
 
@@ -874,7 +1300,7 @@ end
 
 **MyAddon.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: My Addon
 ## Author: Your Name
 ## Version: 1.0.0
@@ -1215,8 +1641,8 @@ All paths relative to: `D:\Games\World of Warcraft\_retail_\Interface\+wow-ui-so
 
 ---
 
-**Version:** 1.0 - Based on WoW 11.2.7 (The War Within)
-**Last Updated:** 2025-10-19
+**Version:** 2.0 - Updated for WoW 12.0.0 (Midnight)
+**Last Updated:** 2026-01-20
 
 <!-- CLAUDE_SKIP_END -->
 

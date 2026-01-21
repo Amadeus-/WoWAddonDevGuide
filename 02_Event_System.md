@@ -4,9 +4,12 @@
 1. [Overview](#overview)
 2. [Event System Basics](#event-system-basics)
 3. [Event Registration Patterns](#event-registration-patterns)
-4. [Common Events by Category](#common-events-by-category)
-5. [Event Best Practices](#event-best-practices)
-6. [Event Reference](#event-reference)
+4. [Callback-Based Event Registration (12.0.0+)](#callback-based-event-registration-1200)
+5. [Common Events by Category](#common-events-by-category)
+6. [New Events (11.x - 12.0.0)](#new-events-11x---1200)
+7. [Removed and Changed Events](#removed-and-changed-events)
+8. [Event Best Practices](#event-best-practices)
+9. [Event Reference](#event-reference)
 
 ---
 
@@ -14,9 +17,10 @@
 The WoW event system is the backbone of addon development. Events notify addons when something happens in the game world.
 
 **Statistics**:
-- **Total Events**: 1,645 events
-- **Event Systems**: 192 different systems
-- **Event Index**: `C:\Dev\WoW_Addon_Dev_Knowledge_Base\events_extracted\00_EVENTS_INDEX.md`
+- **Total Events**: 1,800+ events (12.0.0)
+- **Event Systems**: 200+ different systems
+
+**Version Note**: This document covers WoW 12.0.0 (Midnight expansion). Events may differ in Classic versions.
 
 ## Event System Basics
 
@@ -27,7 +31,7 @@ The WoW event system is the backbone of addon development. Events notify addons 
 3. All frames registered for that event have their OnEvent handler called
 4. The handler receives the event name and any payload data
 
-### Event Registration
+### Event Registration (Traditional Frame-Based)
 
 **Basic Pattern**:
 ```lua
@@ -145,6 +149,102 @@ MyFrame:SetScript("OnEvent", function(self, event, ...)
 end)
 ```
 
+## Callback-Based Event Registration (12.0.0+)
+
+**New in 12.0.0**: WoW now provides a native callback-based event registration system that does not require creating frames. This is the recommended approach for new addons.
+
+### Basic Callback Registration
+
+```lua
+-- Register a callback for an event
+local function OnPlayerLogin(...)
+    print("Player logged in!")
+end
+
+RegisterEventCallback("PLAYER_LOGIN", OnPlayerLogin)
+
+-- Unregister when no longer needed
+UnregisterEventCallback("PLAYER_LOGIN", OnPlayerLogin)
+```
+
+### Unit Event Callbacks
+
+For unit-specific events, use the unit event callbacks to filter by unit:
+
+```lua
+-- Register for a specific unit's events
+local function OnPlayerHealthChanged(unit, ...)
+    local health = UnitHealth(unit)
+    local maxHealth = UnitHealthMax(unit)
+    print(format("%s health: %d/%d", unit, health, maxHealth))
+end
+
+-- Only fires for "player" unit
+RegisterUnitEventCallback("player", "UNIT_HEALTH", OnPlayerHealthChanged)
+
+-- Unregister when done
+UnregisterUnitEventCallback("player", "UNIT_HEALTH", OnPlayerHealthChanged)
+```
+
+### Multiple Callbacks
+
+You can register multiple callbacks for the same event:
+
+```lua
+local function Callback1(...)
+    print("Callback 1 fired")
+end
+
+local function Callback2(...)
+    print("Callback 2 fired")
+end
+
+RegisterEventCallback("PLAYER_ENTERING_WORLD", Callback1)
+RegisterEventCallback("PLAYER_ENTERING_WORLD", Callback2)
+-- Both callbacks will fire when the event occurs
+```
+
+### Callback vs Frame Pattern Comparison
+
+| Feature | Frame-Based | Callback-Based (12.0.0+) |
+|---------|-------------|--------------------------|
+| Requires frame creation | Yes | No |
+| Memory overhead | Higher | Lower |
+| Unregistration | Frame method | Function reference |
+| Multiple handlers | Manual dispatch | Native support |
+| Unit filtering | RegisterUnitEvent | RegisterUnitEventCallback |
+| Backwards compatible | All versions | 12.0.0+ only |
+
+### Hybrid Approach for Compatibility
+
+If your addon needs to support both pre-12.0 and 12.0+ clients:
+
+```lua
+local MyAddon = {}
+
+-- Check if callback system exists
+if RegisterEventCallback then
+    -- Use new callback system
+    local function OnLogin(...)
+        MyAddon:OnPlayerLogin(...)
+    end
+    RegisterEventCallback("PLAYER_LOGIN", OnLogin)
+else
+    -- Fall back to frame-based
+    local frame = CreateFrame("Frame")
+    frame:RegisterEvent("PLAYER_LOGIN")
+    frame:SetScript("OnEvent", function(self, event, ...)
+        if event == "PLAYER_LOGIN" then
+            MyAddon:OnPlayerLogin(...)
+        end
+    end)
+end
+
+function MyAddon:OnPlayerLogin(...)
+    print("Logged in!")
+end
+```
+
 ## Common Events by Category
 
 ### Player Events
@@ -187,6 +287,12 @@ end)
   - Payload: `unitTarget, castGUID, spellID`
 - `UNIT_SPELLCAST_INTERRUPTED` - Cast interrupted
   - Payload: `unitTarget, castGUID, spellID`
+- `UNIT_DIED` - Unit died (12.0.0+)
+  - Payload: `unitTarget`
+- `UNIT_LOOT` - Unit looted (12.0.0+)
+  - Payload: `unitTarget`
+- `UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED` - Diminishing returns state changed (12.0.0+)
+  - Payload: `unitTarget, category, state`
 
 ### Combat Events
 
@@ -195,6 +301,11 @@ end)
 - `COMBAT_LOG_EVENT_UNFILTERED` - Combat log event (use `CombatLogGetCurrentEventInfo()`)
 - `PLAYER_DAMAGE_DONE_MODS` - Damage modifiers changed
   - Payload: `unit`
+- `PARTY_KILL` - Party killed a unit (12.0.0+)
+  - Payload: `unitTarget`
+- `PLAYER_TARGET_DIED` - Player's target died (12.0.0+)
+- `CHAT_MSG_ENCOUNTER_EVENT` - Encounter event message (12.0.0+)
+  - Payload: `text, ...`
 
 **Combat Log Processing**:
 ```lua
@@ -228,8 +339,8 @@ end)
   - Payload: `bagID, slotID`
 - `PLAYERBANKSLOTS_CHANGED` - Bank slot changed
   - Payload: `slotID`
-- `PLAYERREAGENTBANKSLOTS_CHANGED` - Reagent bank changed
-  - Payload: `slotID`
+
+**Note**: `PLAYERREAGENTBANKSLOTS_CHANGED` was removed in 11.2.0 when the Reagent Bank was consolidated into the main bank.
 
 ### Quest Events
 
@@ -260,6 +371,8 @@ end)
 - `CHAT_MSG_SYSTEM` - System message
   - Payload: `text`
 - `CHAT_MSG_EMOTE` - Emote message
+- `CHAT_MSG_ENCOUNTER_EVENT` - Encounter/boss event message (12.0.0+)
+  - Payload: `text, ...`
 
 ### UI Events
 
@@ -272,6 +385,10 @@ end)
   - Payload: `messageType, message`
 - `UI_INFO_MESSAGE` - UI info message
   - Payload: `messageType, message`
+- `SETTINGS_LOADED` - Settings system loaded (11.0.0+)
+- `SETTINGS_PANEL_OPEN` - Settings panel opened (12.0.0+)
+- `ADDON_RESTRICTION_STATE_CHANGED` - Addon restriction state changed (12.0.0+)
+  - Payload: `addonName, state`
 
 ### Loot Events
 
@@ -325,6 +442,169 @@ end)
 - `MIRROR_TIMER_START` - Breath/fatigue timer started
   - Payload: `timerName, value, maxValue, scale, paused, label`
 
+## New Events (11.x - 12.0.0)
+
+### Encounter/Dungeon Events (12.0.0)
+
+The new Encounter Timeline system provides detailed boss fight information:
+
+- `ENCOUNTER_TIMELINE_EVENT_ADDED` - Timeline event added
+  - Payload: `encounterID, eventID, eventData`
+- `ENCOUNTER_TIMELINE_EVENT_REMOVED` - Timeline event removed
+  - Payload: `encounterID, eventID`
+- `ENCOUNTER_TIMELINE_EVENT_STATE_CHANGED` - Event state changed
+  - Payload: `encounterID, eventID, newState`
+- `ENCOUNTER_TIMELINE_LAYOUT_UPDATED` - Timeline layout refreshed
+  - Payload: `encounterID`
+- `ENCOUNTER_WARNING` - Boss ability warning
+  - Payload: `text, warningType`
+- `ENCOUNTER_STATE_CHANGED` - Encounter state changed
+  - Payload: `encounterID, state`
+
+### Damage Meter Events (12.0.0)
+
+Built-in damage meter support:
+
+- `DAMAGE_METER_COMBAT_SESSION_UPDATED` - Combat session data updated
+  - Payload: `sessionID`
+- `DAMAGE_METER_CURRENT_SESSION_UPDATED` - Current session data updated
+- `DAMAGE_METER_RESET` - Damage meter reset
+
+### Combat Log Events (Refactored 12.0.0)
+
+Combat log system has been refactored with new events:
+
+- `COMBAT_LOG_APPLY_FILTER_SETTINGS` - Filter settings applied
+- `COMBAT_LOG_ENTRIES_CLEARED` - Log entries cleared
+- `COMBAT_LOG_MESSAGE_LIMIT_CHANGED` - Message limit changed
+  - Payload: `newLimit`
+- `COMBAT_LOG_REFILTER_ENTRIES` - Entries being refiltered
+- `COMBAT_LOG_MESSAGE` - New combat log message (alternative to CLEU)
+  - Payload: `messageInfo`
+
+### Housing Events (12.0.0)
+
+Over 100 new events for the Housing system. Key events include:
+
+- `HOUSE_INFO_UPDATED` - House information updated
+- `HOUSING_DECOR_PLACE_SUCCESS` - Decor item placed successfully
+  - Payload: `decorID, position`
+- `HOUSING_DECOR_REMOVE_SUCCESS` - Decor item removed
+  - Payload: `decorID`
+- `HOUSING_DECOR_INVENTORY_UPDATED` - Decor inventory changed
+- `HOUSING_MODE_ENTERED` - Entered housing edit mode
+- `HOUSING_MODE_EXITED` - Exited housing edit mode
+- `NEIGHBORHOOD_INFO_UPDATED` - Neighborhood info changed
+- `HOUSING_VISITOR_ENTERED` - Visitor entered your house
+  - Payload: `visitorName, visitorGUID`
+- `HOUSING_VISITOR_LEFT` - Visitor left your house
+  - Payload: `visitorName, visitorGUID`
+
+See `12_Housing_System_Guide.md` for the complete Housing event reference.
+
+### Transmog Events (11.x - 12.0.0)
+
+Enhanced transmogrification events:
+
+- `TRANSMOG_CUSTOM_SETS_CHANGED` - Custom transmog sets changed
+- `TRANSMOG_DISPLAYED_OUTFIT_CHANGED` - Displayed outfit changed
+  - Payload: `outfitID`
+- `TRANSMOG_OUTFITS_CHANGED` - Outfits list changed
+- `VIEWED_TRANSMOG_OUTFIT_STARTED` - Started viewing transmog outfit
+  - Payload: `outfitID`
+- `VIEWED_TRANSMOG_OUTFIT_ENDED` - Stopped viewing transmog outfit
+- `VIEWED_TRANSMOG_SOURCE_STARTED` - Started viewing transmog source
+  - Payload: `sourceID`
+- `VIEWED_TRANSMOG_SOURCE_ENDED` - Stopped viewing transmog source
+
+### Event Scheduler (11.1.0+)
+
+The `C_EventScheduler` API provides scheduled event support:
+
+- `EVENT_SCHEDULER_UPDATE` - Scheduled event tick
+  - Payload: `schedulerID, elapsed`
+
+```lua
+-- Using the event scheduler
+local schedulerID = C_EventScheduler.CreateScheduler(interval, callback)
+C_EventScheduler.DestroyScheduler(schedulerID)
+
+-- Listen for updates
+RegisterEventCallback("EVENT_SCHEDULER_UPDATE", function(schedulerID, elapsed)
+    -- Handle scheduled tick
+end)
+```
+
+### Settings Events (11.0.0+)
+
+- `SETTINGS_LOADED` - Settings system initialized
+- `SETTINGS_PANEL_OPEN` - Settings panel opened (12.0.0+)
+- `SETTINGS_PANEL_CLOSE` - Settings panel closed (12.0.0+)
+
+### Addon Management Events (12.0.0)
+
+- `ADDON_RESTRICTION_STATE_CHANGED` - Addon restriction state changed
+  - Payload: `addonName, restrictionState`
+  - States: `NONE`, `RESTRICTED`, `BLOCKED`
+
+### Spell Diminishing Returns (12.0.0)
+
+- `UNIT_SPELL_DIMINISH_CATEGORY_STATE_UPDATED` - DR state updated
+  - Payload: `unitTarget, category, state, timeRemaining`
+
+## Removed and Changed Events
+
+### Removed in 12.0.0
+
+- `LEARNED_SPELL_IN_TAB` - Removed; use `LEARNED_SPELL` instead
+- `RETURNING_PLAYER_PROMPT` - Behavior changed, event signature modified
+
+### Removed in 11.2.0
+
+With the consolidation of Void Storage and Reagent Bank into the unified Bank system:
+
+**Void Storage Events (Removed)**:
+- `VOID_STORAGE_OPEN`
+- `VOID_STORAGE_CLOSE`
+- `VOID_STORAGE_UPDATE`
+- `VOID_STORAGE_CONTENTS_UPDATE`
+- `VOID_STORAGE_DEPOSIT_UPDATE`
+- `VOID_TRANSFER_DONE`
+
+**Reagent Bank Events (Removed)**:
+- `PLAYERREAGENTBANKSLOTS_CHANGED`
+- `REAGENTBANK_PURCHASED`
+- `REAGENTBANK_UPDATE`
+
+### Changed Event Payloads
+
+**LUA_WARNING** (12.0.0):
+```lua
+-- Old (pre-12.0.0):
+-- Payload: warnType, message
+
+-- New (12.0.0+):
+-- Payload: message
+-- warnType parameter removed
+
+-- Compatibility wrapper:
+frame:SetScript("OnEvent", function(self, event, arg1, arg2)
+    local message
+    if arg2 then
+        -- Pre-12.0.0 format
+        message = arg2
+    else
+        -- 12.0.0+ format
+        message = arg1
+    end
+end)
+```
+
+**VOICE_CHAT_TTS_* Events** (12.0.0):
+Several voice chat text-to-speech events have had parameters removed:
+- `VOICE_CHAT_TTS_PLAYBACK_STARTED` - Removed `voiceID` parameter
+- `VOICE_CHAT_TTS_PLAYBACK_FINISHED` - Removed `voiceID` parameter
+
 ## Event Timing and Order
 
 **Login Sequence**:
@@ -343,11 +623,14 @@ end)
 
 ### 1. Unregister Unused Events
 ```lua
--- After you're done with an event
+-- After you're done with an event (frame-based)
 frame:UnregisterEvent("SOME_EVENT")
 
 -- Unregister all events
 frame:UnregisterAllEvents()
+
+-- Callback-based (12.0.0+)
+UnregisterEventCallback("SOME_EVENT", myCallback)
 ```
 
 ### 2. Throttle High-Frequency Events
@@ -375,11 +658,26 @@ frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("BAG_UPDATE_DELAYED")
 ```
 
+### 4. Use Unit Event Callbacks for Filtering (12.0.0+)
+```lua
+-- Bad: Receives all unit health changes
+RegisterEventCallback("UNIT_HEALTH", function(unit, ...)
+    if unit == "player" then
+        -- Process
+    end
+end)
+
+-- Good: Only receives player health changes
+RegisterUnitEventCallback("player", "UNIT_HEALTH", function(unit, ...)
+    -- Process (always "player")
+end)
+```
+
 ## Event Testing and Debugging
 
 ### Monitor Events
 ```lua
--- Print all events
+-- Print all events (use sparingly - very spammy!)
 local f = CreateFrame("Frame")
 f:RegisterAllEvents()
 f:SetScript("OnEvent", function(self, event, ...)
@@ -398,6 +696,24 @@ Opens a window showing all fired events in real-time.
 /fstack
 ```
 Shows frame names under mouse cursor (useful for finding what handles events).
+
+### Event Filtering in Debug
+```lua
+-- Monitor specific events only
+local watchEvents = {
+    ["PLAYER_LOGIN"] = true,
+    ["PLAYER_ENTERING_WORLD"] = true,
+    ["ADDON_LOADED"] = true,
+}
+
+local f = CreateFrame("Frame")
+for event in pairs(watchEvents) do
+    f:RegisterEvent(event)
+end
+f:SetScript("OnEvent", function(self, event, ...)
+    print(format("[%s] %s: %s", date("%H:%M:%S"), event, strjoin(", ", tostringall(...))))
+end)
+```
 
 ## Advanced Event Patterns
 
@@ -449,26 +765,45 @@ frame:SetScript("OnEvent", function(self, event, ...)
 end)
 ```
 
+### Version-Safe Event Registration
+```lua
+-- Handle events that may not exist in all versions
+local function SafeRegisterEvent(frame, event)
+    -- Try to register; will silently fail if event doesn't exist
+    pcall(function()
+        frame:RegisterEvent(event)
+    end)
+end
+
+-- Or check API availability
+if C_EventUtils and C_EventUtils.IsEventValid then
+    if C_EventUtils.IsEventValid("NEW_EVENT_NAME") then
+        frame:RegisterEvent("NEW_EVENT_NAME")
+    end
+end
+```
+
 ## Complete Event Reference
 
-**Location**: `C:\Dev\WoW_Addon_Dev_Knowledge_Base\events_extracted\00_EVENTS_INDEX.md`
+For a complete event reference, consult the Blizzard API documentation files located in:
+```
+Interface\AddOns\Blizzard_APIDocumentationGenerated\
+```
 
-This file contains:
-- All 1,645 events alphabetically
-- Events organized by 192 systems
-- Event source files
+These files contain all 1,800+ events organized by system, including event payloads and documentation.
 
 <!-- CLAUDE_SKIP_START -->
 ## Next Steps
 
 For API functions to use with events, see `01_API_Reference.md`
 For UI frame setup, see `03_UI_Framework.md`
+For Housing system events, see `12_Housing_System_Guide.md`
 For complete event list with payloads, read the API documentation files
 
 ---
 
-**Version**: 1.0
-**Based on**: WoW 11.2.7 (The War Within)
-**Total Events**: 1,645 events across 192 systems
+**Version**: 2.0
+**Based on**: WoW 12.0.0 (Midnight)
+**Total Events**: 1,800+ events across 200+ systems
 
 <!-- CLAUDE_SKIP_END -->

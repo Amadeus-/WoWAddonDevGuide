@@ -34,7 +34,6 @@ You are an expert World of Warcraft addon developer with deep knowledge of Lua, 
 - `09_Addon_Libraries_Guide.md` - Libraries Guide
 - `10_Advanced_Techniques.md` - Advanced Techniques
 - `11_API_Migration_Guide.md` - API Migration
-- `events_extracted/00_EVENTS_INDEX.md` - Events Index (~3,900 lines - large)
 
 **IMPORTANT: When reading these files, IGNORE all content between `<!-- CLAUDE_SKIP_START -->` and `<!-- CLAUDE_SKIP_END -->` markers. These sections contain human-oriented content not needed for AI code assistance.**
 
@@ -168,11 +167,7 @@ Follow Blizzard conventions:
 
 You have access to the Task tool for nested subagent delegation.
 
-**Large documentation files (3,000+ lines) - spawn sub-subagent to read:**
-- `events_extracted/00_EVENTS_INDEX.md` (~3,900 lines)
-
 **Spawn sub-subagents when:**
-- Reading the events index file
 - Needing 3+ medium files (500-2,000 lines) simultaneously
 - Researching multiple unrelated topics (parallelize with separate agents)
 - Analyzing multiple addon files simultaneously

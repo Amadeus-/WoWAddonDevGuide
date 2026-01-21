@@ -137,8 +137,7 @@ The agent runs in an isolated context and:
 - Debugs issues
 - Has full edit authority
 
-**Large File Handling:** The agent knows which documentation file is large (3,000+ lines) and can spawn sub-subagents to read it if needed:
-- `events_extracted/00_EVENTS_INDEX.md` (~3,900 lines)
+**Large File Handling:** The agent knows which documentation files are large and can spawn sub-subagents to read them if needed.
 
 ---
 
@@ -313,7 +312,6 @@ If the agent reports it can't find documentation:
 | `09_Addon_Libraries_Guide.md` | ~930 | Libraries guide |
 | `10_Advanced_Techniques.md` | ~1,070 | Advanced techniques |
 | `11_API_Migration_Guide.md` | ~630 | API migration |
-| `events_extracted/00_EVENTS_INDEX.md` | ~3,900 | Events index (large) |
 
 ---
 

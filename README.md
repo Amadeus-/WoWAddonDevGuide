@@ -3,12 +3,12 @@
 ## 📚 Overview
 <!-- CLAUDE_SKIP_START -->
 
-This comprehensive knowledge base contains **everything** you need to create, debug, analyze, and maintain World of Warcraft addons. It was created by analyzing the complete WoW 11.2.7 (The War Within) UI source code and extracting patterns, APIs, events, and best practices.
+This comprehensive knowledge base contains **everything** you need to create, debug, analyze, and maintain World of Warcraft addons. Originally created by analyzing the complete WoW 11.2.7 (The War Within) UI source code, now updated for **12.0.0 (Midnight)** with documentation of the major API changes including the "Addon Apocalypse" Secret Values system.
 
 ## ✨ What's Included
 <!-- CLAUDE_SKIP_END -->
 
-### Complete Documentation (12 Guides + Quick Start)
+### Complete Documentation (13 Guides + Quick Start)
 - ✅ **[00_MASTER_PROMPT.md](00_MASTER_PROMPT.md)** - Master overview and entry point
 - ✅ **[01_API_Reference.md](01_API_Reference.md)** - WoW API functions organized by category
 - ✅ **[02_Event_System.md](02_Event_System.md)** - Complete event system documentation
@@ -20,13 +20,14 @@ This comprehensive knowledge base contains **everything** you need to create, de
 - ✅ **[08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)** - Ace3, LibStub, community frameworks ⭐
 - ✅ **[09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md)** - Complete library reference (LibStub, Ace3, LibDataBroker, etc.) ⭐
 - ✅ **[10_Advanced_Techniques.md](10_Advanced_Techniques.md)** - Production-level patterns (cross-client, performance, multi-addon) ⭐
-- ✅ **[11_API_Migration_Guide.md](11_API_Migration_Guide.md)** - API version migration, compatibility wrappers, update strategies ⭐ NEW!
+- ✅ **[11_Housing_System_Guide.md](11_Housing_System_Guide.md)** - Housing system APIs and development patterns ⭐ NEW!
+- ✅ **[12_API_Migration_Guide.md](12_API_Migration_Guide.md)** - API version migration, compatibility wrappers, update strategies ⭐
 - ✅ **[QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)** - Get started in 5 minutes ⭐
 
 ### Reference Data
-- **API Documentation** - 513 API files analyzed (`api_extracted/`)
-- **Event Lists** - Complete event reference (`events_extracted/`)
-- **File Organization** - Categorized lists of 281 Blizzard addons (`file_lists/`)
+- **API Documentation** - 513 API functions documented in [01_API_Reference.md](01_API_Reference.md)
+- **Event Lists** - Complete event reference in [02_Event_System.md](02_Event_System.md)
+- **281 Blizzard addons** analyzed for patterns and examples
 
 ### Source Code Analysis
 - **3,417** Blizzard UI source files analyzed
@@ -74,14 +75,14 @@ This comprehensive knowledge base contains **everything** you need to create, de
 | **08_Community_Addon_Patterns.md** | Ace3, LibStub, localization, profiles | Using frameworks |
 | **09_Addon_Libraries_Guide.md** | LibStub, Ace3, LibDataBroker, all libraries | Using libraries |
 | **10_Advanced_Techniques.md** | Cross-client, event bucketing, profiling, multi-addon | Production-level addons |
-| **11_API_Migration_Guide.md** | Version upgrades, API changes, compatibility | Updating for new patches |
+| **11_Housing_System_Guide.md** | Housing APIs, furniture, decoration | Building housing addons |
+| **12_API_Migration_Guide.md** | Version upgrades, API changes, compatibility | Updating for new patches |
 
 ### API Reference
 | File | Topics | When to Read |
 |------|--------|--------------|
 | **01_API_Reference.md** | C_* APIs, function categories | Looking up API calls |
-| **api_extracted/** | Detailed API lists | Need specific functions |
-| **events_extracted/** | Event lists and payloads | Need event details |
+| **02_Event_System.md** | Event lists and payloads | Need event details |
 <!-- CLAUDE_SKIP_END -->
 
 ## 🎯 Common Use Cases
@@ -128,8 +129,11 @@ This comprehensive knowledge base contains **everything** you need to create, de
 **Optimize for production/large-scale addons**
 → Read: [10_Advanced_Techniques.md](10_Advanced_Techniques.md) (Performance, Event Bucketing, Multi-Addon)
 
+**Build housing addons**
+→ Read: [11_Housing_System_Guide.md](11_Housing_System_Guide.md) (Housing APIs, furniture placement, decoration)
+
 **Update addon for new WoW patch/expansion**
-→ Read: [11_API_Migration_Guide.md](11_API_Migration_Guide.md) (API changes, migration patterns, compatibility)
+→ Read: [12_API_Migration_Guide.md](12_API_Migration_Guide.md) (API changes, migration patterns, compatibility)
 
 **Track quests**
 → Read: [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md) (Quest Tracking) → [01_API_Reference.md](01_API_Reference.md)
@@ -173,19 +177,15 @@ This comprehensive knowledge base contains **everything** you need to create, de
 ### By File Type
 
 **Looking at Blizzard source code?**
-- Find addon categories: [file_lists/UI_Core_Systems.md](file_lists/UI_Core_Systems.md)
-- Most important addon: `Blizzard_SharedXML` (see [file_lists/UI_Core_Systems.md](file_lists/UI_Core_Systems.md))
+- Most important addon: `Blizzard_SharedXML` (core templates and utilities)
 - Action buttons: `Blizzard_ActionBar` (see [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md))
 - Buffs/debuffs: `Blizzard_BuffFrame` (see [07_Blizzard_UI_Examples.md](07_Blizzard_UI_Examples.md))
 
 **Looking for API functions?**
-- Browse by category: [01_API_Reference.md](01_API_Reference.md)
-- Full API list: [api_extracted/00_API_INDEX.md](api_extracted/00_API_INDEX.md)
-- By category: [api_extracted/00_API_BY_CATEGORY.md](api_extracted/00_API_BY_CATEGORY.md)
+- Complete API reference: [01_API_Reference.md](01_API_Reference.md)
 
 **Looking for events?**
-- Event system: [02_Event_System.md](02_Event_System.md)
-- Full event list: [events_extracted/00_EVENTS_INDEX.md](events_extracted/00_EVENTS_INDEX.md)
+- Complete event reference: [02_Event_System.md](02_Event_System.md)
 
 ## 📁 Directory Structure
 
@@ -205,20 +205,8 @@ WoW_Addon_Dev_Knowledge_Base/
 ├── 08_Community_Addon_Patterns.md ⭐
 ├── 09_Addon_Libraries_Guide.md ⭐
 ├── 10_Advanced_Techniques.md ⭐
-├── 11_API_Migration_Guide.md ⭐ NEW!
-│
-├── api_extracted/
-│   ├── 00_API_INDEX.md
-│   ├── 00_API_BY_CATEGORY.md
-│   └── 00_API_STATISTICS.md
-│
-├── events_extracted/
-│   └── 00_EVENTS_INDEX.md
-│
-└── file_lists/
-    ├── README.md
-    ├── 00_ALL_BLIZZARD_ADDONS.txt
-    └── UI_Core_Systems.md
+├── 11_Housing_System_Guide.md ⭐ NEW!
+└── 12_API_Migration_Guide.md ⭐
 ```
 <!-- CLAUDE_SKIP_END -->
 
@@ -326,7 +314,7 @@ WTF\Account\[Account]\[Server]\[Character]\SavedVariables\
 
 ### Week 5+: Production-Level
 - [ ] Read [10_Advanced_Techniques.md](10_Advanced_Techniques.md)
-- [ ] Read [11_API_Migration_Guide.md](11_API_Migration_Guide.md)
+- [ ] Read [12_API_Migration_Guide.md](12_API_Migration_Guide.md)
 - [ ] Implement cross-client compatibility
 - [ ] Add performance profiling
 - [ ] Optimize with event bucketing
@@ -339,9 +327,32 @@ WTF\Account\[Account]\[Server]\[Character]\SavedVariables\
 <!-- CLAUDE_SKIP_START -->
 ### Official Blizzard Code
 All examples in this knowledge base reference:
-- WoW Version: **11.2.7 (The War Within)**
+- WoW Version: **12.0.0 (Midnight)**
+- Interface Version: **120000**
 - Files Analyzed: **3,417** Blizzard UI files
 - Addons Documented: **281** official addons
+
+### Critical 12.0.0 Changes
+
+**"Addon Apocalypse" - Secret Values System:**
+- Combat-sensitive values (damage, healing, resources) are now "secret values"
+- Addons cannot directly read these values; must use Blizzard's official damage meter
+- Affects: damage meters, combat logs, healing trackers, threat meters
+- C_DamageMeter namespace provides official encounter data
+
+**Major API Migrations:**
+- Action bar APIs moved to `C_ActionBar` namespace
+- Combat log APIs moved to `C_CombatLog` namespace
+- Many global functions removed (use C_* equivalents)
+
+**New Systems:**
+- Official damage meter and encounter timeline (`C_DamageMeter`)
+- Housing system (`C_Housing`) - see [11_Housing_System_Guide.md](11_Housing_System_Guide.md)
+
+**New TOC Directives:**
+- `## Category:` - Addon category for organization
+- `## Group:` - Group related addons together
+- `## LoadSavedVariablesFirst:` - Ensure saved variables load before code
 
 ### External Links
 - **Wowpedia**: https://wowpedia.fandom.com/wiki/World_of_Warcraft_API
@@ -371,18 +382,19 @@ This knowledge base includes:
 <!-- CLAUDE_SKIP_START -->
 1. **New Developer?** → Start with [QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)
 2. **Need specific feature?** → Use the "I want to..." section above
-3. **Want deep knowledge?** → Read all 12 guides in order ([00_MASTER_PROMPT.md](00_MASTER_PROMPT.md) through [11_API_Migration_Guide.md](11_API_Migration_Guide.md))
+3. **Want deep knowledge?** → Read all 13 guides in order ([00_MASTER_PROMPT.md](00_MASTER_PROMPT.md) through [12_API_Migration_Guide.md](12_API_Migration_Guide.md))
 4. **Ready to code?** → Reference guides as needed while building
 
 ---
 
 ## 📝 Version Information
 
-**Knowledge Base Version:** 1.1
-**WoW Version:** 11.2.7 (The War Within)
-**Last Updated:** 2025-10-19
+**Knowledge Base Version:** 2.0
+**WoW Version:** 12.0.0 (Midnight)
+**Interface Version:** 120000
+**Last Updated:** 2026-01-20
 **Files Analyzed:** 3,417 Blizzard UI files + 21,514 community addon files
-**Documentation Files:** 12 comprehensive guides
+**Documentation Files:** 13 comprehensive guides
 
 ---
 

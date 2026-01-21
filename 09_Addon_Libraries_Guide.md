@@ -2,15 +2,18 @@
 
 ## Table of Contents
 1. [Overview](#overview)
-2. [LibStub - The Foundation](#libstub---the-foundation)
-3. [Ace3 Library Suite](#ace3-library-suite)
-4. [Data Broker System](#data-broker-system)
-5. [Popular Utility Libraries](#popular-utility-libraries)
-6. [UI Enhancement Libraries](#ui-enhancement-libraries)
-7. [Specialized Libraries](#specialized-libraries)
-8. [Embedding Libraries](#embedding-libraries)
-9. [Library Best Practices](#library-best-practices)
-10. [Finding and Using Libraries](#finding-and-using-libraries)
+2. [Native API Alternatives](#native-api-alternatives)
+3. [LibStub - The Foundation](#libstub---the-foundation)
+4. [Ace3 Library Suite](#ace3-library-suite)
+5. [Data Broker System](#data-broker-system)
+6. [Popular Utility Libraries](#popular-utility-libraries)
+7. [UI Enhancement Libraries](#ui-enhancement-libraries)
+8. [Specialized Libraries](#specialized-libraries)
+9. [Housing Libraries](#housing-libraries)
+10. [Embedding Libraries](#embedding-libraries)
+11. [Library Compatibility Notes](#library-compatibility-notes)
+12. [Library Best Practices](#library-best-practices)
+13. [Finding and Using Libraries](#finding-and-using-libraries)
 
 ---
 
@@ -21,11 +24,11 @@ WoW addon libraries are reusable code modules that provide common functionality.
 ### Why Use Libraries?
 
 **Benefits:**
-- ✅ **Save development time** - Pre-built functionality
-- ✅ **Battle-tested code** - Used by thousands of addons
-- ✅ **Community support** - Well-documented and maintained
-- ✅ **Compatibility** - Multiple addons can share same library
-- ✅ **Best practices** - Written by experienced developers
+- Save development time - Pre-built functionality
+- Battle-tested code - Used by thousands of addons
+- Community support - Well-documented and maintained
+- Compatibility - Multiple addons can share same library
+- Best practices - Written by experienced developers
 
 **Common Use Cases:**
 - Configuration GUI (AceConfig)
@@ -35,6 +38,138 @@ WoW addon libraries are reusable code modules that provide common functionality.
 - Media resources (LibSharedMedia)
 - Event handling (AceEvent)
 - Localization (AceLocale)
+
+**Important Note for 12.0.0 (Midnight):**
+Many library functions now have native API equivalents added in patches 11.1.5 through 12.0.0. For new addons, prefer native APIs when available. Libraries remain valuable for backwards compatibility and advanced features not covered by native APIs.
+
+---
+
+## Native API Alternatives
+
+**New in 11.1.5+ and 12.0.0** - Blizzard has added native APIs that replace common library functionality. For new addons, prefer these native alternatives.
+
+### C_EncodingUtil vs LibSerialize/LibCompress/LibDeflate (11.1.5+)
+
+Native compression and encoding is now available via `C_EncodingUtil`:
+
+```lua
+-- Native compression (prefer this for new addons)
+local data = "This is a long string that needs compression..."
+
+-- Compress string
+local compressed = C_EncodingUtil.CompressString(data)
+
+-- Encode to base64 for safe transmission/storage
+local base64 = C_EncodingUtil.EncodeBase64(compressed)
+
+-- Decode and decompress
+local decoded = C_EncodingUtil.DecodeBase64(base64)
+local original = C_EncodingUtil.DecompressString(decoded)
+
+-- Native JSON serialization (prefer this for new addons)
+local myTable = { name = "Test", value = 42, nested = { a = 1, b = 2 } }
+local json = C_EncodingUtil.SerializeJSON(myTable)
+local restored = C_EncodingUtil.DeserializeJSON(json)
+```
+
+**When to still use libraries:**
+- LibDeflate/LibCompress: For specific compression algorithms (ZLIB, etc.)
+- LibSerialize: For complex table serialization with metatables
+- Cross-addon communication requiring specific formats
+- Backwards compatibility with existing data formats
+
+### Native Table Functions vs LibTableUtil (11.1.7+)
+
+Native table utilities have been added to the `table` namespace:
+
+```lua
+-- Native table preallocation (11.1.7+)
+-- Pre-allocate array with 100 slots for better performance
+local t = table.create(100)
+
+-- Pre-allocate with both array (100) and hash (50) slots
+local t2 = table.create(100, 50)
+
+-- Native table counting (11.2.5+)
+-- Count all key-value pairs (not just array portion)
+local myTable = { a = 1, b = 2, [1] = "x", [2] = "y" }
+local count = table.count(myTable)  -- Returns 4
+
+-- Compare with # operator (only counts array portion)
+print(#myTable)  -- Returns 2 (only numeric keys from 1)
+print(table.count(myTable))  -- Returns 4 (all keys)
+```
+
+**When to still use libraries:**
+- Complex table operations (deep copy, merge, diff)
+- Table pooling and recycling
+- Backwards compatibility with older WoW versions
+
+### Settings API vs AceConfig (11.0+)
+
+The native Settings API is now the standard for addon configuration:
+
+```lua
+-- Native Settings API approach
+local category = Settings.RegisterVerticalLayoutCategory("MyAddon")
+
+local setting = Settings.RegisterAddOnSetting(category,
+    "myAddonEnabled",
+    "enabled",
+    MyAddonDB,
+    Settings.VarType.Boolean,
+    "Enable Addon",
+    true
+)
+
+Settings.CreateCheckbox(category, setting, "Enable or disable the addon")
+Settings.RegisterAddOnCategory(category)
+
+-- Open settings
+Settings.OpenToCategory(category.ID)
+```
+
+**When to still use AceConfig:**
+- Complex nested option tables
+- Dynamic option generation
+- Profile management integration with AceDB
+- Existing addons with extensive AceConfig usage
+- Rapid prototyping (AceConfig's declarative syntax is faster to write)
+
+### EventRegistry vs AceEvent/CallbackHandler (11.0+)
+
+The native EventRegistry system provides modern callback handling:
+
+```lua
+-- Native EventRegistry for frame events
+local function OnPlayerLogin()
+    print("Player logged in!")
+end
+
+EventRegistry:RegisterCallback("PLAYER_LOGIN", OnPlayerLogin, owner)
+EventRegistry:UnregisterCallback("PLAYER_LOGIN", owner)
+
+-- For custom addon events, EventRegistry also works
+EventRegistry:RegisterCallback("MyAddon.SomeEvent", handler, owner)
+EventRegistry:TriggerEvent("MyAddon.SomeEvent", arg1, arg2)
+```
+
+**When to still use libraries:**
+- AceEvent: For its embedding pattern and integration with AceAddon
+- CallbackHandler: For library development requiring callback systems
+- Backwards compatibility
+
+### Summary: Native vs Library
+
+| Task | Native API (12.0.0) | Library Alternative | Recommendation |
+|------|---------------------|---------------------|----------------|
+| Compression | C_EncodingUtil.CompressString | LibDeflate, LibCompress | Native for new code |
+| Base64 | C_EncodingUtil.EncodeBase64 | LibBase64 | Native for new code |
+| JSON | C_EncodingUtil.SerializeJSON | LibJSON | Native for new code |
+| Table prealloc | table.create() | LibTableUtil | Native for new code |
+| Table count | table.count() | LibTableUtil | Native for new code |
+| Settings UI | Settings API | AceConfig | Native preferred, Ace for complex UIs |
+| Events | EventRegistry | AceEvent | Either works well |
 
 ---
 
@@ -204,6 +339,8 @@ end);
 #### 3. AceConfig-3.0
 **Configuration GUI generation**
 
+**Note (11.0+):** Blizzard's native Settings API is now available. For new addons, consider using Settings API for simple configurations. AceConfig remains valuable for complex nested options and profile integration. See Native API Alternatives section.
+
 ```lua
 local options = {
     name = "MyAddon",
@@ -270,6 +407,8 @@ LibStub("AceConfigDialog-3.0"):Open("MyAddon");
 
 #### 4. AceEvent-3.0
 **Simplified event handling**
+
+**Note (11.0+):** Blizzard's EventRegistry system is available as an alternative. AceEvent still works well and integrates nicely with the Ace ecosystem. See Native API Alternatives section.
 
 ```lua
 -- Embed in addon
@@ -632,6 +771,8 @@ local inRange = LRC:GetRange("target", 40);  -- Within 40 yards?
 
 **Compression library.**
 
+**Note (11.1.5+):** For new addons, consider using native `C_EncodingUtil.CompressString()` and `C_EncodingUtil.EncodeBase64()` instead. See Native API Alternatives section.
+
 ```lua
 local LibDeflate = LibStub:GetLibrary("LibDeflate");
 
@@ -651,6 +792,7 @@ print(original == decompressed);  -- true
 - Sharing addon profiles
 - Compressing saved data
 - Import/export strings
+- Backwards compatibility with existing LibDeflate-encoded data
 
 ---
 
@@ -749,6 +891,89 @@ LCG.PixelGlow_Stop(button);
 LCG.AutoCastGlow_Stop(button);
 ```
 
+**Note (12.0.0):** LibCustomGlow may need updates due to action bar API changes. Check for updated versions.
+
+---
+
+## Housing Libraries
+
+**New in 12.0.0 (Midnight)** - Player housing introduces extensive APIs but community libraries are still emerging.
+
+### Current Status
+
+No standard housing libraries exist yet, but common patterns are emerging in the community:
+
+```lua
+-- Housing API provides extensive functionality via C_Housing
+-- Libraries will likely wrap these patterns:
+
+-- Example: Housing data management pattern
+local HousingHelper = {}
+
+function HousingHelper:GetPlacedFurniture()
+    local furniture = {}
+    local plotInfo = C_Housing.GetCurrentPlotInfo()
+    if plotInfo then
+        -- Gather placed furniture data
+        for i, item in ipairs(C_Housing.GetPlacedFurniture()) do
+            table.insert(furniture, {
+                id = item.furnitureID,
+                position = item.position,
+                rotation = item.rotation,
+            })
+        end
+    end
+    return furniture
+end
+
+function HousingHelper:SaveLayout(name)
+    local layout = self:GetPlacedFurniture()
+    -- Save to addon database
+    return layout
+end
+```
+
+### Expected Library Patterns
+
+As housing matures, expect libraries for:
+
+- **Layout Management** - Save/restore furniture arrangements
+- **Furniture Cataloging** - Track owned furniture across characters
+- **Positioning Helpers** - Snap-to-grid, alignment tools
+- **Housing Events** - Simplified callbacks for housing state changes
+
+### Using Native C_Housing API
+
+For now, use the native C_Housing API directly:
+
+```lua
+-- Check if player has housing unlocked
+if C_Housing.IsHousingUnlocked() then
+    -- Get current plot info
+    local plotInfo = C_Housing.GetCurrentPlotInfo()
+
+    -- Enter housing mode
+    C_Housing.EnterHousingMode()
+
+    -- Place furniture (when in housing mode)
+    C_Housing.PlaceFurniture(furnitureID, position, rotation)
+end
+
+-- Register for housing events
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("HOUSING_FURNITURE_PLACED")
+frame:RegisterEvent("HOUSING_FURNITURE_REMOVED")
+frame:RegisterEvent("HOUSING_MODE_ENTERED")
+frame:RegisterEvent("HOUSING_MODE_EXITED")
+```
+
+### Recommendations
+
+1. **Build on native APIs** - C_Housing is comprehensive
+2. **Watch community repos** - Libraries will emerge on WoWAce/GitHub
+3. **Consider contributing** - Help establish standard patterns
+4. **Use AceDB for storage** - Profile-based layout storage works well
+
 ---
 
 ## Embedding Libraries
@@ -781,6 +1006,131 @@ MyAddon:SomeLibraryMethod();
 
 ---
 
+## Library Compatibility Notes
+
+**12.0.0 (Midnight) Compatibility Status**
+
+### Libraries Requiring Updates
+
+#### Ace3 Suite
+- **Status:** Likely needs updates for Settings API changes
+- **Impact:** AceConfigDialog integration with Blizzard options panel
+- **Workaround:** Check for 12.0.0-compatible releases on WoWAce
+- **Note:** Core functionality (AceAddon, AceDB, AceEvent) should work
+
+```lua
+-- Check Ace3 version compatibility
+local AceAddon = LibStub("AceAddon-3.0", true)
+if AceAddon then
+    local _, minor = LibStub:GetLibrary("AceAddon-3.0")
+    print("AceAddon version:", minor)
+end
+```
+
+#### Action Bar Libraries
+- **Status:** MAJOR updates required
+- **Impact:** Global action bar functions removed in 12.0.0
+- **Affected:** LibActionButton, Bartender4 internals, custom action bar code
+- **Details:** Functions like `ActionButton_Update()` no longer exist as globals
+
+```lua
+-- OLD (broken in 12.0.0):
+ActionButton_Update(button)
+
+-- NEW: Use mixin methods on button frames
+button:Update()
+-- Or hook the mixin directly
+```
+
+#### Transmog/Appearance Libraries
+- **Status:** Complete rewrites needed
+- **Impact:** Wardrobe API overhauled
+- **Affected:** LibWardrobe, transmog collection addons
+- **Details:** Many C_TransmogCollection functions changed or removed
+
+#### LibCustomGlow
+- **Status:** May need updates
+- **Impact:** Action button glow effects
+- **Workaround:** Test thoroughly; may work with minor fixes
+
+### Libraries Expected to Work
+
+#### LibStub
+- **Status:** Works (foundation library, minimal API surface)
+- **Note:** Always use latest version
+
+#### LibDataBroker-1.1
+- **Status:** Works (self-contained callback system)
+- **Note:** No WoW API dependencies
+
+#### LibDBIcon-1.0
+- **Status:** Should work
+- **Note:** Verify with new addon list changes in 12.0.0
+- **Test:** Check minimap icon visibility and positioning
+
+#### CallbackHandler-1.0
+- **Status:** Works
+- **Note:** Consider EventRegistry for new code, but CallbackHandler remains functional
+
+#### LibSharedMedia-3.0
+- **Status:** Works (media registration unchanged)
+- **Note:** Standard fonts/textures still function
+
+#### LibRangeCheck-3.0
+- **Status:** Likely works
+- **Note:** Range-checking APIs stable
+
+### Secret Values Consideration
+
+**12.0.0 introduces secret values for sensitive APIs.** This doesn't directly affect libraries but impacts addon code using libraries:
+
+```lua
+-- Libraries that wrap secure functions may need updates
+-- Example: If a library caches spell IDs from GetSpellInfo
+-- Some spell data may now require secret value handling
+
+-- Your addon code should handle this:
+local function SafeGetSpellName(spellID)
+    local name = C_Spell.GetSpellName(spellID)
+    -- name might be a secret value in some contexts
+    return name
+end
+```
+
+### Version Checking Pattern
+
+```lua
+-- Robust library loading with version check
+local function LoadLibrarySafely(name, minVersion)
+    local lib, version = LibStub:GetLibrary(name, true)
+    if not lib then
+        print("Library not found:", name)
+        return nil
+    end
+    if minVersion and version < minVersion then
+        print("Library too old:", name, "need", minVersion, "have", version)
+        return nil
+    end
+    return lib
+end
+
+-- Usage
+local AceDB = LoadLibrarySafely("AceDB-3.0", 28)
+if AceDB then
+    -- Safe to use
+end
+```
+
+### Migration Recommendations
+
+1. **Test libraries in 12.0.0 PTR** before launch
+2. **Check WoWAce/GitHub** for updated library versions
+3. **Have fallbacks** for critical functionality
+4. **Consider native APIs** for new features (see Native API Alternatives section)
+5. **Report issues** to library maintainers with specific error messages
+
+---
+
 ## Library Best Practices
 
 ### 1. Version Management
@@ -798,7 +1148,7 @@ end
 
 **List libraries before your code:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: My Addon
 
 # Libraries
@@ -908,14 +1258,16 @@ Core.lua
 
 ### Key Points
 
-1. ✅ **LibStub** is the foundation - all libraries use it
-2. ✅ **Ace3** is the most popular framework - great for beginners
-3. ✅ **LibDataBroker** is standard for data display - use for broker integration
-4. ✅ **Embed libraries** to make code cleaner
-5. ✅ **Use .pkgmeta** for automatic library management
-6. ✅ **Never modify** library files - update or report bugs instead
-7. ✅ **Load in correct order** - LibStub → libs → your code
-8. ✅ **Check versions** - use LibStub:GetLibrary() safely
+1. **LibStub** is the foundation - all libraries use it
+2. **Ace3** is the most popular framework - great for beginners
+3. **LibDataBroker** is standard for data display - use for broker integration
+4. **Embed libraries** to make code cleaner
+5. **Use .pkgmeta** for automatic library management
+6. **Never modify** library files - update or report bugs instead
+7. **Load in correct order** - LibStub then libs then your code
+8. **Check versions** - use LibStub:GetLibrary() safely
+9. **Consider native APIs** - C_EncodingUtil, table.create(), Settings API
+10. **Check 12.0.0 compatibility** - Test libraries before Midnight launch
 
 ### Next Steps
 
@@ -924,10 +1276,12 @@ Core.lua
 3. **Add LibDataBroker** - Create a minimap icon
 4. **Explore specialized libraries** - Find ones for your needs
 5. **Keep libraries updated** - Check for new versions
+6. **Evaluate native alternatives** - Use C_EncodingUtil for compression/JSON in new code
 
 ---
 
-**Version:** 1.0 - Based on WoW 11.2.7 (The War Within)
-**Last Updated:** 2025-10-19
+**Version:** 2.0 - Updated for WoW 12.0.0 (Midnight)
+**Last Updated:** 2026-01-20
 **Libraries Documented:** 20+ popular WoW addon libraries
-<\!-- CLAUDE_SKIP_END -->
+**New Sections:** Native API Alternatives, Housing Libraries, Library Compatibility Notes
+<!-- CLAUDE_SKIP_END -->

@@ -2,21 +2,54 @@
 
 ## Table of Contents
 1. [Welcome](#welcome)
-2. [How to Use This Knowledge Base](#how-to-use-this-knowledge-base)
-3. [Complete Documentation Structure](#complete-documentation-structure)
-4. [Your First Addon - 5 Minute Tutorial](#your-first-addon---5-minute-tutorial)
-5. [Common Tasks - Quick Reference](#common-tasks---quick-reference)
-6. [Getting Help](#getting-help)
-7. [File Paths Reference](#file-paths-reference)
-8. [Next Steps](#next-steps)
+2. [Critical 12.0.0 Changes](#critical-1200-changes)
+3. [How to Use This Knowledge Base](#how-to-use-this-knowledge-base)
+4. [Complete Documentation Structure](#complete-documentation-structure)
+5. [Your First Addon - 5 Minute Tutorial](#your-first-addon---5-minute-tutorial)
+6. [Common Tasks - Quick Reference](#common-tasks---quick-reference)
+7. [Getting Help](#getting-help)
+8. [File Paths Reference](#file-paths-reference)
+9. [Next Steps](#next-steps)
 
 ---
 
 ## Welcome!
 <!-- CLAUDE_SKIP_START -->
 
-This knowledge base contains everything you need to create, debug, and maintain World of Warcraft addons.
+This knowledge base contains everything you need to create, debug, and maintain World of Warcraft addons. Updated for **WoW 12.0.0 (Midnight)** with Interface version **120000**.
 <!-- CLAUDE_SKIP_END -->
+
+## Critical 12.0.0 Changes
+
+Before starting addon development in 12.0.0 (Midnight), be aware of these major changes:
+
+### "Addon Apocalypse" - Secret Values
+Combat-sensitive data is now hidden from addons:
+- Damage, healing, and resource values are "secret values"
+- Traditional damage meters/combat logs no longer work
+- Use Blizzard's official `C_DamageMeter` API instead
+
+### API Migrations
+Many global functions have been removed. Use C_* namespaces:
+
+| Old (Removed) | New (12.0.0) |
+|---------------|--------------|
+| `GetActionInfo()` | `C_ActionBar.GetActionInfo()` |
+| `GetActionTexture()` | `C_ActionBar.GetActionTexture()` |
+| `CombatLogGetCurrentEventInfo()` | `C_CombatLog.GetCurrentEventInfo()` |
+
+### New TOC Directives
+```
+## Category: Combat                    -- Addon category for organization
+## Group: MyAddonSuite                 -- Group related addons
+## LoadSavedVariablesFirst: 1          -- Load saved vars before code
+```
+
+### Key New Namespaces
+- `C_ActionBar` - Action bar management
+- `C_CombatLog` - Combat log access (limited by secret values)
+- `C_DamageMeter` - Official damage/healing meter data
+- `C_Housing` - Player housing system (see [11_Housing_System_Guide.md](11_Housing_System_Guide.md))
 
 ## How to Use This Knowledge Base
 <!-- CLAUDE_SKIP_START -->
@@ -68,12 +101,10 @@ This knowledge base contains everything you need to create, debug, and maintain 
 7. **06_Data_Persistence.md** - Saved variables, database management
 8. **07_Blizzard_UI_Examples.md** - Real-world code examples
 9. **08_Community_Addon_Patterns.md** - Community patterns, Ace3, LibStub
-
-### Supporting Files
-
-- **file_lists/** - Categorized lists of Blizzard addons
-- **api_extracted/** - API function lists and categories
-- **events_extracted/** - Event lists and documentation
+10. **09_Addon_Libraries_Guide.md** - Library reference (LibStub, Ace3, LibDataBroker)
+11. **10_Advanced_Techniques.md** - Production-level patterns
+12. **11_Housing_System_Guide.md** - Housing system APIs and development
+13. **12_API_Migration_Guide.md** - API version migration and compatibility
 
 <!-- CLAUDE_SKIP_END -->
 ## Your First Addon - 5 Minute Tutorial
@@ -86,10 +117,11 @@ D:\Games\World of Warcraft\_retail_\Interface\AddOns\MyFirstAddon\
 ### Step 2: Create TOC File
 **MyFirstAddon.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: My First Addon
 ## Author: Your Name
 ## Version: 1.0.0
+## Category: Miscellaneous
 ## SavedVariables: MyFirstAddonDB
 
 MyFirstAddon.lua
@@ -196,14 +228,20 @@ end);
 local name = UnitName("player");
 local health = UnitHealth("player");
 
--- Item info
-local itemName = GetItemInfo(itemID);
+-- Item info (use C_Item in 12.0.0)
+local itemInfo = C_Item.GetItemInfo(itemID);
 
--- Spell info
-local spellName = GetSpellInfo(spellID);
+-- Spell info (use C_Spell in 12.0.0)
+local spellInfo = C_Spell.GetSpellInfo(spellID);
 
--- Modern C_* API
+-- Quest info
 local quests = C_QuestLog.GetAllCompletedQuestIDs();
+
+-- Action bar (12.0.0 - use C_ActionBar)
+local actionType, id, subType = C_ActionBar.GetActionInfo(slot);
+
+-- Damage meter (12.0.0 - official API)
+local encounterData = C_DamageMeter.GetEncounterData();
 ```
 
 ### UI Frames
@@ -302,6 +340,7 @@ WTF\Errors\
 
 ---
 
-**Version:** 1.0 - Based on WoW 11.2.7 (The War Within)
-**Last Updated:** 2025-10-19
+**Version:** 2.0 - Based on WoW 12.0.0 (Midnight)
+**Interface Version:** 120000
+**Last Updated:** 2026-01-20
 <!-- CLAUDE_SKIP_END -->

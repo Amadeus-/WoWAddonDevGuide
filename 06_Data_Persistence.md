@@ -7,9 +7,12 @@
 4. [Best Practices for Data Structure](#best-practices-for-data-structure)
 5. [Initialization Patterns](#initialization-patterns)
 6. [Defaults and Migrations](#defaults-and-migrations)
-7. [Performance Considerations](#performance-considerations)
-8. [Security and Validation](#security-and-validation)
-9. [Debugging Saved Variables](#debugging-saved-variables)
+7. [Data Serialization (C_EncodingUtil)](#data-serialization-c_encodingutil)
+8. [Sharing Data Between Addons](#sharing-data-between-addons)
+9. [Performance Considerations](#performance-considerations)
+10. [Security and Validation](#security-and-validation)
+11. [Debugging Saved Variables](#debugging-saved-variables)
+12. [Warband and Account-Wide Data](#warband-and-account-wide-data)
 
 ---
 
@@ -19,7 +22,8 @@ WoW addons persist data between sessions using **saved variables**. These are Lu
 
 **Key Concepts:**
 - Variables are saved when logging out or `/reload`
-- Loaded before `ADDON_LOADED` event fires
+- By default, loaded before `ADDON_LOADED` event fires (but after Lua files execute)
+- With `LoadSavedVariablesFirst: 1` (11.1.5+), loaded BEFORE any addon Lua files execute
 - Stored in `WTF/Account/[Account]/SavedVariables/` or character-specific folders
 - Must be global variables (not local)
 - Can be any Lua-serializable type (tables, numbers, strings, booleans)
@@ -33,7 +37,7 @@ WoW addons persist data between sessions using **saved variables**. These are Lu
 Shared across all characters on the account:
 
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: My Addon
 ## SavedVariables: MyAddonDB, MyAddonConfig
 ```
@@ -48,7 +52,7 @@ WTF/Account/[AccountName]/SavedVariables/MyAddon.lua
 Unique to each character:
 
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: My Addon
 ## SavedVariablesPerCharacter: MyAddonCharDB, MyAddonProfiles
 ```
@@ -85,6 +89,75 @@ You can declare multiple saved variables (comma-separated):
 ## SavedVariables: MyAddonDB, MyAddonSettings, MyAddonCache
 ## SavedVariablesPerCharacter: MyAddonCharData, MyAddonProfiles
 ```
+
+### LoadSavedVariablesFirst (11.1.5+)
+
+**New in 11.1.5:** This directive changes when saved variables are loaded relative to addon Lua files.
+
+```
+## Interface: 120000
+## Title: My Addon
+## SavedVariables: MyAddonDB
+## LoadSavedVariablesFirst: 1
+```
+
+**Default Behavior (without directive):**
+1. Addon Lua files execute
+2. Saved variables are loaded
+3. `ADDON_LOADED` event fires
+
+**With `LoadSavedVariablesFirst: 1`:**
+1. Saved variables are loaded
+2. Addon Lua files execute (saved variables already available!)
+3. `ADDON_LOADED` event fires
+
+**Use Cases:**
+- Addons that need configuration during file initialization
+- Avoiding the `ADDON_LOADED` dance for simple addons
+- Settings that affect how files are parsed
+
+**Example with LoadSavedVariablesFirst:**
+```lua
+-- Core.lua - SavedVariables already loaded when this runs!
+-- No need to wait for ADDON_LOADED
+
+-- Directly access saved settings at file scope
+local debugMode = MyAddonDB and MyAddonDB.debugMode or false;
+
+if debugMode then
+    print("MyAddon: Debug mode enabled at load time!");
+end
+
+-- Initialize defaults if needed (still recommended)
+MyAddonDB = MyAddonDB or {};
+MyAddonDB.debugMode = MyAddonDB.debugMode or false;
+```
+
+**Comparison - Traditional vs LoadSavedVariablesFirst:**
+```lua
+-- TRADITIONAL PATTERN (without LoadSavedVariablesFirst)
+local isDebug = false;  -- Must use default, variable not loaded yet
+
+local frame = CreateFrame("Frame");
+frame:RegisterEvent("ADDON_LOADED");
+frame:SetScript("OnEvent", function(self, event, addonName)
+    if addonName == "MyAddon" then
+        MyAddonDB = MyAddonDB or {};
+        isDebug = MyAddonDB.debugMode;  -- NOW we can read it
+        self:UnregisterEvent("ADDON_LOADED");
+    end
+end);
+
+-- WITH LoadSavedVariablesFirst: 1
+-- SavedVariables already loaded, so this works immediately:
+MyAddonDB = MyAddonDB or {};
+local isDebug = MyAddonDB.debugMode or false;  -- Works at file scope!
+```
+
+**Important Notes:**
+- Still recommended to use `ADDON_LOADED` for complex initialization
+- The directive only changes load ORDER, not the fact that variables may be nil on first run
+- Combine with defensive coding (`MyAddonDB = MyAddonDB or {}`)
 
 ---
 
@@ -419,6 +492,347 @@ end
 
 ---
 
+## Data Serialization (C_EncodingUtil)
+
+**New in 11.1.5:** WoW now provides native serialization APIs through `C_EncodingUtil`. This is ideal for sharing data between players (import/export strings), compressing large data, and cross-addon communication.
+
+### JSON Serialization (Human Readable)
+
+```lua
+-- Serialize a table to JSON string
+local myData = {
+    settings = {
+        enabled = true,
+        scale = 1.5,
+    },
+    items = {12345, 67890, 11111},
+};
+
+local jsonStr = C_EncodingUtil.SerializeJSON(myData);
+-- Result: {"settings":{"enabled":true,"scale":1.5},"items":[12345,67890,11111]}
+
+-- Deserialize JSON back to table
+local restored = C_EncodingUtil.DeserializeJSON(jsonStr);
+print(restored.settings.enabled);  -- true
+```
+
+### CBOR Serialization (Binary, Compact)
+
+CBOR (Concise Binary Object Representation) is more compact than JSON and preserves Lua types better:
+
+```lua
+-- Serialize to CBOR (binary format)
+local cborStr = C_EncodingUtil.SerializeCBOR(myData);
+
+-- Deserialize CBOR back to table
+local restored = C_EncodingUtil.DeserializeCBOR(cborStr);
+```
+
+**When to use CBOR vs JSON:**
+- **JSON:** Human-readable, easier debugging, widely compatible
+- **CBOR:** Smaller output, faster serialization, better type preservation
+
+### String Compression
+
+Compress large strings before storage or transmission:
+
+```lua
+-- Compress a string
+local largeData = string.rep("Hello World! ", 1000);
+local compressed = C_EncodingUtil.CompressString(largeData);
+
+-- Decompress back
+local original = C_EncodingUtil.DecompressString(compressed);
+
+-- Check compression ratio
+print(format("Original: %d bytes, Compressed: %d bytes",
+    #largeData, #compressed));
+```
+
+### Base64 Encoding (For Sharing)
+
+Convert binary data to safe shareable strings:
+
+```lua
+-- Encode for sharing (safe for chat/clipboard)
+local base64 = C_EncodingUtil.EncodeBase64(compressed);
+
+-- Decode received string
+local decoded = C_EncodingUtil.DecodeBase64(base64);
+```
+
+### Complete Import/Export Pattern
+
+```lua
+local MyAddon = {};
+
+-- Export settings as shareable string
+function MyAddon:ExportSettings()
+    local exportData = {
+        version = 1,
+        settings = MyAddonDB.settings,
+        timestamp = time(),
+    };
+
+    -- Serialize to JSON
+    local json = C_EncodingUtil.SerializeJSON(exportData);
+
+    -- Compress
+    local compressed = C_EncodingUtil.CompressString(json);
+
+    -- Base64 encode for safe sharing
+    local exportString = C_EncodingUtil.EncodeBase64(compressed);
+
+    return exportString;
+end
+
+-- Import settings from shared string
+function MyAddon:ImportSettings(importString)
+    -- Validate input
+    if type(importString) ~= "string" or #importString == 0 then
+        return false, "Invalid import string";
+    end
+
+    -- Decode Base64
+    local decoded = C_EncodingUtil.DecodeBase64(importString);
+    if not decoded then
+        return false, "Failed to decode Base64";
+    end
+
+    -- Decompress
+    local decompressed = C_EncodingUtil.DecompressString(decoded);
+    if not decompressed then
+        return false, "Failed to decompress data";
+    end
+
+    -- Parse JSON
+    local importData = C_EncodingUtil.DeserializeJSON(decompressed);
+    if not importData then
+        return false, "Failed to parse JSON";
+    end
+
+    -- Validate version
+    if not importData.version or importData.version > 1 then
+        return false, "Incompatible version";
+    end
+
+    -- Apply settings
+    if importData.settings then
+        for key, value in pairs(importData.settings) do
+            MyAddonDB.settings[key] = value;
+        end
+    end
+
+    return true, "Settings imported successfully!";
+end
+
+-- Slash command handlers
+SLASH_MYADDON_EXPORT1 = "/myaddonexport";
+SlashCmdList["MYADDON_EXPORT"] = function()
+    local exportStr = MyAddon:ExportSettings();
+    -- Copy to editbox for user to copy
+    MyAddon:ShowExportDialog(exportStr);
+end
+```
+
+### Optimizing SavedVariables with Compression
+
+For addons with large datasets, compress before saving:
+
+```lua
+-- Store compressed data in SavedVariables
+function MyAddon:SaveLargeData(data)
+    local json = C_EncodingUtil.SerializeJSON(data);
+    MyAddonDB.compressedData = C_EncodingUtil.CompressString(json);
+    MyAddonDB.dataVersion = 1;
+end
+
+-- Load and decompress
+function MyAddon:LoadLargeData()
+    if not MyAddonDB.compressedData then
+        return nil;
+    end
+
+    local json = C_EncodingUtil.DecompressString(MyAddonDB.compressedData);
+    return C_EncodingUtil.DeserializeJSON(json);
+end
+```
+
+---
+
+## Sharing Data Between Addons
+
+**New in 11.1.7:** Addons can now expose their namespace table for other addons to access via `C_AddOns.GetAddOnLocalTable()`.
+
+### Exposing Your Addon's API
+
+**Step 1: Enable in TOC file**
+```
+## Interface: 120000
+## Title: MyDataAddon
+## SavedVariables: MyDataAddonDB
+## AllowAddOnTableAccess: 1
+```
+
+**Step 2: Create public API in your namespace**
+```lua
+-- MyDataAddon/Core.lua
+local addonName, ns = ...;
+
+-- Private data (not directly accessible)
+ns.privateData = {
+    internalCache = {},
+};
+
+-- Public API (accessible by other addons)
+ns.API = {
+    -- Get addon version
+    GetVersion = function()
+        return "1.0.0";
+    end,
+
+    -- Get player's tracked data
+    GetPlayerData = function(playerName)
+        if not MyDataAddonDB.players then
+            return nil;
+        end
+        return CopyTable(MyDataAddonDB.players[playerName] or {});
+    end,
+
+    -- Check if tracking is enabled
+    IsTrackingEnabled = function()
+        return MyDataAddonDB.settings and MyDataAddonDB.settings.trackingEnabled;
+    end,
+
+    -- Register callback for data updates
+    RegisterCallback = function(callback)
+        ns.callbacks = ns.callbacks or {};
+        table.insert(ns.callbacks, callback);
+    end,
+};
+
+-- Internal function to notify callbacks
+function ns:NotifyCallbacks(event, data)
+    if self.callbacks then
+        for _, callback in ipairs(self.callbacks) do
+            pcall(callback, event, data);
+        end
+    end
+end
+```
+
+### Accessing Another Addon's API
+
+```lua
+-- OtherAddon/Core.lua
+local addonName, ns = ...;
+
+local function OnAddonLoaded()
+    -- Try to get MyDataAddon's namespace
+    local dataAddonNS = C_AddOns.GetAddOnLocalTable("MyDataAddon");
+
+    if dataAddonNS and dataAddonNS.API then
+        -- Access the API
+        local version = dataAddonNS.API.GetVersion();
+        print("MyDataAddon version:", version);
+
+        -- Get player data
+        local playerData = dataAddonNS.API.GetPlayerData(UnitName("player"));
+        if playerData then
+            print("Found player data!");
+        end
+
+        -- Register for updates
+        dataAddonNS.API.RegisterCallback(function(event, data)
+            print("Data update:", event);
+        end);
+    else
+        print("MyDataAddon not available or API not exposed");
+    end
+end
+
+-- Wait for both addons to load
+local frame = CreateFrame("Frame");
+frame:RegisterEvent("ADDON_LOADED");
+frame:SetScript("OnEvent", function(self, event, loadedAddon)
+    if loadedAddon == addonName then
+        -- Use a slight delay to ensure other addons are ready
+        C_Timer.After(0, OnAddonLoaded);
+        self:UnregisterEvent("ADDON_LOADED");
+    end
+end);
+```
+
+### Best Practices for Cross-Addon Communication
+
+```lua
+-- GOOD: Return copies of data, not references
+ns.API = {
+    GetSettings = function()
+        return CopyTable(ns.db.settings);  -- Safe copy
+    end,
+};
+
+-- BAD: Returning direct references (allows modification)
+ns.API = {
+    GetSettings = function()
+        return ns.db.settings;  -- Direct reference - dangerous!
+    end,
+};
+
+-- GOOD: Validate inputs
+ns.API = {
+    SetOption = function(key, value)
+        local validKeys = {debugMode = true, showTooltips = true};
+        if not validKeys[key] then
+            return false, "Invalid option key";
+        end
+        ns.db.settings[key] = value;
+        return true;
+    end,
+};
+
+-- GOOD: Version your API
+ns.API = {
+    API_VERSION = 1,
+
+    IsCompatible = function(requiredVersion)
+        return ns.API.API_VERSION >= requiredVersion;
+    end,
+};
+```
+
+### Checking Addon Availability
+
+```lua
+-- Check if addon is loaded and has API access enabled
+local function IsAddonAPIAvailable(addonName)
+    -- Check if addon is loaded
+    if not C_AddOns.IsAddOnLoaded(addonName) then
+        return false, "Addon not loaded";
+    end
+
+    -- Try to get the table
+    local addonNS = C_AddOns.GetAddOnLocalTable(addonName);
+    if not addonNS then
+        return false, "API access not enabled (AllowAddOnTableAccess)";
+    end
+
+    return true, addonNS;
+end
+
+-- Usage
+local available, result = IsAddonAPIAvailable("MyDataAddon");
+if available then
+    local ns = result;
+    -- Use ns.API...
+else
+    print("Cannot access addon:", result);
+end
+```
+
+---
+
 ## Performance Considerations
 
 ### Limit Data Size
@@ -652,7 +1066,7 @@ end
 
 **MyAddon.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: My Tracking Addon
 ## SavedVariables: MyTrackerDB
 ## SavedVariablesPerCharacter: MyTrackerCharDB
@@ -722,6 +1136,215 @@ end);
 
 ---
 
+## Warband and Account-Wide Data
+
+**New in The War Within (11.0) and Midnight (12.0):** The Warband system introduced account-wide character data sharing. This section covers addon considerations for Warband data.
+
+### Warband Character Keys
+
+When tracking data across characters, consider using Warband-aware identifiers:
+
+```lua
+-- Traditional character key
+local function GetCharacterKey()
+    local name = UnitName("player");
+    local realm = GetRealmName();
+    return format("%s-%s", realm, name);
+end
+
+-- Warband-aware character GUID (more stable)
+local function GetWarbandCharacterID()
+    -- Player GUID is stable across sessions
+    local guid = UnitGUID("player");
+    return guid;
+end
+
+-- Get all Warband characters for current account
+local function GetWarbandCharacters()
+    local characters = {};
+
+    -- Use C_AccountInfo for warband character data
+    if C_AccountInfo and C_AccountInfo.GetIDFromBattleNetAccountGUID then
+        -- Warband character iteration (when available)
+        -- Note: API availability may vary by patch
+    end
+
+    return characters;
+end
+```
+
+### Account-Wide vs Character-Specific Data
+
+Choose the appropriate storage based on data type:
+
+```lua
+-- TOC Configuration
+-- ## SavedVariables: MyAddonDB           -- Shared account-wide
+-- ## SavedVariablesPerCharacter: MyCharDB -- Per-character only
+
+MyAddonDB = {
+    -- Account-wide settings (shared across all characters)
+    accountSettings = {
+        soundEnabled = true,
+        language = "enUS",
+    },
+
+    -- Warband tracking data (aggregated from all characters)
+    warbandData = {
+        totalGold = 0,           -- Sum across all characters
+        achievements = {},       -- Shared achievements
+        collectibles = {},       -- Mounts, pets, etc.
+    },
+
+    -- Character registry (keyed by GUID for stability)
+    characters = {
+        ["Player-GUID-1234"] = {
+            name = "CharacterName",
+            realm = "RealmName",
+            class = "WARRIOR",
+            lastSeen = time(),
+        },
+    },
+};
+
+-- Per-character data that should NOT be shared
+MyCharDB = {
+    -- UI positions specific to this character
+    framePositions = {},
+
+    -- Character-specific tracked data
+    currentQuests = {},
+
+    -- Session-specific cache
+    sessionCache = {},
+};
+```
+
+### Bank Storage Changes (11.2.0+)
+
+**Important:** Void Storage was removed in 11.2.0. If your addon tracked Void Storage items, update accordingly:
+
+```lua
+-- REMOVED: Void Storage APIs (as of 11.2.0)
+-- These functions no longer exist:
+-- GetVoidItemInfo()
+-- GetNumVoidTransferDeposit()
+-- GetNumVoidTransferWithdrawal()
+-- GetVoidTransferCost()
+-- CanUseVoidStorage()
+-- IsVoidStorageReady()
+
+-- Bank storage now uses unified Warband bank (11.0+)
+-- Use C_Bank API for modern bank operations
+
+-- Check if bank is available
+if C_Bank then
+    -- Get bank bag slots
+    local bagSlots = C_Container.GetNumBankSlots();
+
+    -- Warband bank tab information
+    if C_Bank.FetchPurchasedBankTabData then
+        C_Bank.FetchPurchasedBankTabData(Enum.BankType.Account);
+    end
+end
+```
+
+### Migration from Void Storage Tracking
+
+If your addon previously tracked Void Storage:
+
+```lua
+local function MigrateFromVoidStorage()
+    local db = MyAddonDB;
+
+    -- Version check for migration
+    if db.version and db.version < 12 then
+        -- Remove obsolete void storage data
+        if db.voidStorage then
+            -- Optionally migrate to regular bank tracking
+            -- or just remove the obsolete data
+            db.voidStorageLegacy = db.voidStorage;  -- Keep for reference
+            db.voidStorage = nil;
+
+            print("MyAddon: Void Storage tracking removed (feature no longer exists)");
+        end
+
+        db.version = 12;
+    end
+end
+```
+
+### Warband Bank Tracking
+
+```lua
+-- Track items across Warband bank
+local function GetWarbandBankItems()
+    local items = {};
+
+    -- Warband bank uses account-wide bank type
+    if C_Bank and Enum.BankType.Account then
+        -- Iterate warband bank tabs
+        local numTabs = C_Bank.FetchNumPurchasedBankTabs(Enum.BankType.Account) or 0;
+
+        for tabIndex = 1, numTabs do
+            local tabInfo = C_Bank.FetchPurchasedBankTabData(Enum.BankType.Account);
+            -- Process tab data...
+        end
+    end
+
+    return items;
+end
+```
+
+### Best Practices for Warband Data
+
+```lua
+-- 1. Use GUIDs instead of name-realm for character identification
+local charGUID = UnitGUID("player");
+MyAddonDB.characters[charGUID] = {
+    name = UnitName("player"),
+    realm = GetRealmName(),
+    -- ... other data
+};
+
+-- 2. Aggregate data at logout for cross-character visibility
+frame:RegisterEvent("PLAYER_LOGOUT");
+frame:SetScript("OnEvent", function(self, event)
+    if event == "PLAYER_LOGOUT" then
+        local charGUID = UnitGUID("player");
+        local charData = MyAddonDB.characters[charGUID] or {};
+
+        -- Update character's contribution to warband totals
+        charData.gold = GetMoney();
+        charData.lastSeen = time();
+
+        MyAddonDB.characters[charGUID] = charData;
+
+        -- Recalculate warband totals
+        local totalGold = 0;
+        for _, char in pairs(MyAddonDB.characters) do
+            totalGold = totalGold + (char.gold or 0);
+        end
+        MyAddonDB.warbandData.totalGold = totalGold;
+    end
+end);
+
+-- 3. Handle character deletion gracefully
+local function PruneDeletedCharacters()
+    -- Characters not seen in 90+ days might be deleted
+    local cutoff = time() - (90 * 24 * 60 * 60);
+
+    for guid, data in pairs(MyAddonDB.characters) do
+        if data.lastSeen and data.lastSeen < cutoff then
+            -- Mark as possibly deleted, don't remove immediately
+            data.possiblyDeleted = true;
+        end
+    end
+end
+```
+
+---
+
 <!-- CLAUDE_SKIP_START -->
 ## Summary
 
@@ -751,8 +1374,16 @@ end);
 
 ---
 
-**Version:** 1.0 - Based on WoW 11.2.7 (The War Within)
-**Last Updated:** 2025-10-19
+**Version:** 2.0 - Updated for WoW 12.0.0 (Midnight)
+**Last Updated:** 2026-01-20
 **Source:** Blizzard TOC files and common community patterns
+
+### Changes in 2.0:
+- Added `LoadSavedVariablesFirst` TOC directive (11.1.5+)
+- Added `C_EncodingUtil` serialization APIs (11.1.5+)
+- Added `AllowAddOnTableAccess` and `C_AddOns.GetAddOnLocalTable()` (11.1.7+)
+- Added Warband and account-wide data section
+- Documented Void Storage removal (11.2.0)
+- Updated interface version to 120000
 
 <!-- CLAUDE_SKIP_END -->

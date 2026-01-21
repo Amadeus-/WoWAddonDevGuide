@@ -1,6 +1,88 @@
 <\!-- CLAUDE_SKIP_START -->
 # WoW Addon Development Knowledge Base - Update Log
 
+## Version 2.0 - 2026-01-20
+
+### Major Update: 12.0.0 (Midnight) Compatibility
+
+**Summary:**
+Comprehensive update of the entire WoW Addon Development Knowledge Base for the Midnight expansion (12.0.0). This update documents the "Addon Apocalypse" - the largest API overhaul in WoW history with 432 new APIs, 140+ removed APIs, and the introduction of the Secret Values security system.
+
+**New Files Added:**
+- `12_Housing_System_Guide.md` - Comprehensive guide for player housing APIs (287+ new functions)
+
+**Files Updated (All 13 Guides):**
+- `00_MASTER_PROMPT.md` - Updated for 12.0.0, new namespaces, Secret Values warning
+- `01_API_Reference.md` - Major expansion with 12.0.0 namespaces, Secret Values, new functions
+- `02_Event_System.md` - 75+ new events, callback-based registration, removed events
+- `03_UI_Framework.md` - Secret value widgets, Curve/Duration objects, new widget methods
+- `04_Addon_Structure.md` - New TOC directives, C_AddOns updates, profiling
+- `05_Patterns_And_Best_Practices.md` - Secret values handling, encoding, housing patterns
+- `06_Data_Persistence.md` - C_EncodingUtil, LoadSavedVariablesFirst, Warband data
+- `07_Blizzard_UI_Examples.md` - New Blizzard addons (DamageMeter, Housing, etc.)
+- `08_Community_Addon_Patterns.md` - 12.0 migration guides per addon category
+- `09_Addon_Libraries_Guide.md` - Native API alternatives, library compatibility
+- `10_Advanced_Techniques.md` - Secret Values system, profiling, encounter integration
+- `11_API_Migration_Guide.md` - Complete patch-by-patch documentation 11.0.2-12.0.1
+- `README.md` - Updated version, added Housing guide
+- `QUICK_START_GUIDE.md` - 12.0.0 critical changes section
+
+**Major Topics Added:**
+1. **Secret Values System (12.0.0)** - Complete documentation of Blizzard's new security system that obscures combat-sensitive data from addons
+2. **C_DamageMeter** - Official damage meter API that replaces combat log parsing for damage/healing data
+3. **C_EncounterTimeline / C_EncounterWarnings** - New boss timeline system for encounter addons
+4. **C_Housing (287+ functions)** - Complete player housing system API
+5. **C_ActionBar namespace** - Replaces global action bar functions (REMOVED in 12.0.0)
+6. **C_CombatLog namespace** - Replaces global combat log functions (REMOVED in 12.0.0)
+7. **C_EncodingUtil (11.1.5)** - Native compression/serialization APIs
+8. **New TOC directives** - Category, Group, LoadSavedVariablesFirst, AllowAddOnTableAccess
+9. **Callback-based event registration (12.0.0)** - New EventUtil patterns
+10. **Lua extensions** - table.create, table.count, string.concat
+
+**API Changes Documented:**
+- Patches: 11.0.2, 11.0.5, 11.0.7, 11.1.0, 11.1.5, 11.1.7, 11.2.0, 11.2.5, 11.2.7, 12.0.0, 12.0.1
+- New APIs: 432+ (12.0.0) + hundreds more across 11.x patches
+- Removed APIs: 140+ (12.0.0) + many deprecations in 11.x
+- New Events: 100+ (housing, combat, encounter, transmog)
+- New CVars: 100+ (secret testing, encounter, housing)
+
+**Statistics:**
+- Total guides: 14 (was 12)
+- API Migration Guide: Expanded from ~630 lines to ~1,950 lines
+- Housing System Guide: New file, ~1,766 lines
+- All other guides significantly expanded with 12.0.0 content
+
+**Breaking Changes Documented:**
+- Global action bar functions REMOVED (use C_ActionBar)
+- Combat log globals REMOVED (use C_CombatLog)
+- Transmog APIs completely redesigned (C_TransmogCollection/Sets overhaul)
+- Void Storage REMOVED (11.2.0)
+- Reagent Bank REMOVED (11.2.0)
+- Socket APIs moved (11.2.5)
+- UnitAura finally removed (use C_UnitAuras)
+
+**Why This Update:**
+The Midnight expansion (12.0.0) represents the largest API overhaul in WoW history. Blizzard implemented sweeping security changes ("Secret Values") that fundamentally change how combat addons work. The combat log no longer exposes real damage numbers to addons - instead, addons must use C_DamageMeter to access damage/healing data. Without updated documentation, addon developers would struggle to migrate existing addons or create new ones for the Midnight expansion.
+
+**Impact:**
+This update ensures the knowledge base remains the authoritative reference for WoW addon development through the Midnight expansion era. Developers can now:
+- Understand and implement Secret Values handling
+- Migrate combat addons to use C_DamageMeter
+- Build player housing addons using C_Housing
+- Navigate the extensive API removals and replacements
+- Use new encoding/compression APIs for data handling
+
+**Directories Removed (2026-01-20 Cleanup):**
+The following directories contained outdated 11.x extracted data and were removed to prevent confusion. All useful information from these directories is now incorporated into the main guide files in a more organized and useful format:
+
+- `api_extracted/` - Contained raw API index files (513 entries from 11.x). Redundant with `01_API_Reference.md` which has better organized, example-rich API documentation.
+- `events_extracted/` - Contained alphabetical event list (1,645 events from 11.2.7). Redundant with `02_Event_System.md` which includes event payloads, examples, and 12.0.0 updates.
+- `file_lists/` - Contained Blizzard addon folder listings from 11.2.7. Low practical value for addon development.
+
+**Rationale:** These directories were originally created as raw data dumps during the initial knowledge base creation. The main guide files (00-12) now contain all relevant information in a curated, example-rich format that's more useful for actual addon development. Keeping outdated extracted data risked causing confusion or misinformation.
+
+---
+
 ## Version 1.1 - 2025-10-19
 
 ### Major Addition: API Migration Guide
@@ -176,23 +258,30 @@ The guide was validated against:
 
 ## Future Roadmap
 
-### Potential Additions for Version 1.2+
+### Completed in Version 2.0
+- Major 12.0.0 (Midnight) documentation - COMPLETE
+- Secret Values system documentation - COMPLETE
+- Player Housing APIs (C_Housing) - COMPLETE
+- API Migration Guide expansion - COMPLETE
+- Combat log modernization (C_DamageMeter) - COMPLETE
+
+### Potential Additions for Version 2.1+
 
 **Suggested Topics:**
 - Cross-addon communication patterns
 - WeakAuras integration guide
-- Advanced combat log parsing
-- Retail vs Classic compatibility matrices
-- Performance optimization deep-dive
-- Security and taint management
-- UI animation and effects guide
+- Classic Era / Season of Discovery compatibility guide
+- Performance optimization deep-dive (profiling with C_AddOnProfiler)
+- UI animation and effects guide (Curve/Duration objects)
+- Housing addon examples and tutorials
 
 **Maintenance Tasks:**
-- Update for WoW 11.3.0 when released
-- Monitor for new API changes
-- Add new library documentation as libraries emerge
-- Expand real-world examples
-- Add video tutorial references
+- Update for WoW 12.0.5 / 12.1.0 when released
+- Monitor for new API changes and deprecations
+- Track Secret Values system evolution
+- Add new library documentation as libraries adapt to 12.0.0
+- Expand real-world 12.0.0 migration examples
+- Document community addon adaptations to Secret Values
 
 ---
 
@@ -212,9 +301,9 @@ This helps future maintainers understand the evolution and rationale behind the 
 
 ---
 
-**Log Version:** 1.0
+**Log Version:** 2.0
 **Created:** 2025-10-19
-**Last Updated:** 2025-10-19
+**Last Updated:** 2026-01-20
 **Maintained By:** AI-assisted documentation team
-**Knowledge Base Status:** Active, Version 1.1
+**Knowledge Base Status:** Active, Version 2.0 (12.0.0 Midnight)
 <\!-- CLAUDE_SKIP_END -->

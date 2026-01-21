@@ -5,13 +5,16 @@
 2. [TOC Directives Reference](#toc-directives-reference)
 3. [File Organization Best Practices](#file-organization-best-practices)
 4. [Load Order](#load-order)
-5. [Dependencies Management](#dependencies-management)
-6. [LoadOnDemand Addons](#loadondemand-addons)
-7. [Addon Initialization Patterns](#addon-initialization-patterns)
-8. [Module Organization](#module-organization)
-9. [Library Integration](#library-integration)
-10. [Localization Structure](#localization-structure)
-11. [Example Addon Structures](#example-addon-structures)
+5. [C_AddOns API Reference](#c_addons-api-reference)
+6. [Addon Profiling (11.0.7+)](#addon-profiling-1107)
+7. [Security Changes in 12.0.0](#security-changes-in-1200-midnight)
+8. [Dependencies Management](#dependencies-management)
+9. [LoadOnDemand Addons](#loadondemand-addons)
+10. [Addon Initialization Patterns](#addon-initialization-patterns)
+11. [Module Organization](#module-organization)
+12. [Library Integration](#library-integration)
+13. [Localization Structure](#localization-structure)
+14. [Example Addon Structures](#example-addon-structures)
 
 ---
 
@@ -34,7 +37,7 @@ AddonName/
 **Basic TOC structure:**
 ```
 ## Title: My Addon Name
-## Interface: 110207
+## Interface: 120000
 ## Author: Your Name
 ## Version: 1.0.0
 ## Notes: Brief description of what the addon does
@@ -63,11 +66,21 @@ UI.xml
 #### `## Interface: <version>`
 Specifies which game version the addon is compatible with.
 ```
-## Interface: 110207        # Version 11.2.7
+## Interface: 120000        # Version 12.0.0 (Midnight)
+## Interface: 120001        # Version 12.0.1
 ## Interface: 0             # Works with any version (Blizzard addons only)
 ```
-**Format:** AABBCC where AA=expansion, BB=major, CC=minor
+**Format:** XXYYZZ where XX=expansion, YY=major, ZZ=minor
+- Example: 120000 = 12.00.00 (Midnight 12.0.0)
 - Example: 110207 = 11.02.07 (The War Within 11.2.7)
+
+**Recent interface versions:**
+- 120000 = 12.0.0 (Midnight)
+- 110207 = 11.2.7 (The War Within)
+- 110200 = 11.2.0 (The War Within)
+- 110100 = 11.1.0 (The War Within)
+- 110005 = 11.0.5 (The War Within)
+- 110002 = 11.0.2 (The War Within launch)
 
 #### `## Title: <name>`
 Display name shown in the addon list.
@@ -205,10 +218,17 @@ Ensures this addon loads before others (Blizzard addons only).
 ```
 
 #### `## LoadSavedVariablesFirst: 1`
-Loads saved variables before the addon code executes.
+Loads saved variables before the addon code executes (11.1.5+).
 ```
 ## LoadSavedVariablesFirst: 1
 ```
+
+This is particularly useful when:
+- Your addon needs saved data during the initial script execution
+- You want to access settings before module initialization
+- You need to configure the addon based on user preferences at load time
+
+Without this directive, saved variables are available only after all addon files have loaded (at `ADDON_LOADED` event).
 
 ---
 
@@ -227,7 +247,7 @@ Controls where the addon can load.
 - `Both`: Works in both environments
 
 #### `## AllowLoadGameType: <type1>, <type2>, ...`
-Restricts loading to specific game variants.
+Restricts loading to specific game variants. As of 11.1.5+, this directive is available to all addons (was previously secure-only).
 ```
 ## AllowLoadGameType: mainline                    # Retail only
 ## AllowLoadGameType: classic                     # Classic Era
@@ -246,12 +266,45 @@ Restricts loading to specific game variants.
 - `plunderstorm` - Plunderstorm game mode
 - `wowhack` - Special development mode
 
-**Per-file loading restrictions:**
+**Per-file loading restrictions (11.1.5+):**
 ```
-# In TOC file
+# In TOC file - inline AllowLoadGameType for specific files
 MainlineFeature.lua [AllowLoadGameType mainline]
 ClassicFeature.lua [AllowLoadGameType classic]
 SharedFeature.lua
+```
+
+---
+
+### Addon Organization Directives (11.1.0+)
+
+#### `## Category: <name>`
+Groups addons under collapsible headers in the addon list (11.1.0+).
+```
+## Category: My Addon Category
+## Category-deDE: Meine Addon-Kategorie
+## Category-frFR: Ma Categorie d'Addon
+```
+
+Use localized variants with `Category-<locale>:` for different languages. This helps users organize related addons together in their addon management interface.
+
+#### `## Group: <ParentAddonName>`
+Links related addons together under a parent addon (11.1.0+).
+```
+## Group: MyMainAddon
+```
+
+This is useful for addon suites where multiple addons share functionality:
+```
+# MyAddon_Options.toc
+## Title: MyAddon - Options
+## Group: MyAddon
+## LoadOnDemand: 1
+
+# MyAddon_Debug.toc
+## Title: MyAddon - Debug Tools
+## Group: MyAddon
+## LoadOnDemand: 1
 ```
 
 ---
@@ -313,6 +366,24 @@ Suppresses local table reference warnings.
 ## SuppressLocalTableRef: 1
 ```
 
+#### `## AllowAddOnTableAccess: 1`
+Allows other addons to access this addon's namespace table via `C_AddOns.GetAddOnLocalTable()` (11.1.7+).
+```
+## AllowAddOnTableAccess: 1
+```
+
+When enabled, other addons can retrieve your addon's local table:
+```lua
+-- In another addon
+local otherAddonTable = C_AddOns.GetAddOnLocalTable("MyAddon")
+if otherAddonTable then
+    -- Access shared data/functions
+    otherAddonTable.SomeFunction()
+end
+```
+
+This provides a cleaner alternative to exposing global tables for addon interoperability.
+
 ---
 
 ### Special Metadata Directives
@@ -323,12 +394,6 @@ Icon shown in addon list.
 ## IconTexture: Interface\ICONS\inv_misc_note_06
 ```
 
-#### `## Category: <name>`
-Category for organizing addons.
-```
-## Category: Character Utils
-```
-
 #### Custom/Informational Directives
 Any directive starting with `## X-` is custom and ignored by WoW:
 ```
@@ -337,6 +402,82 @@ Any directive starting with `## X-` is custom and ignored by WoW:
 ## X-License: MIT
 ## X-Curse-Project-ID: 12345
 ## X-WoWI-ID: 67890
+```
+
+---
+
+### TOC Inline Variables (11.1.5+)
+
+TOC files support inline variables that expand based on the game environment. This allows a single TOC to load different files for different game variants.
+
+#### Family Variable `[Family]`
+Expands based on game family (Mainline vs Classic):
+```
+[Family]\Init.lua
+# Expands to:
+# - Mainline\Init.lua (on Retail)
+# - Classic\Init.lua (on Classic versions)
+```
+
+#### Game Variable `[Game]`
+Expands based on specific game version:
+```
+[Game]\Features.lua
+# Expands to:
+# - Standard\Features.lua (Retail)
+# - Mists\Features.lua (MoP Remix)
+# - Vanilla\Features.lua (Classic Era)
+# - Wrath\Features.lua (WotLK Classic)
+# - Cata\Features.lua (Cata Classic)
+```
+
+#### TextLocale Variable `[TextLocale]`
+Expands based on client locale:
+```
+Locales\[TextLocale].lua
+# Expands to:
+# - Locales\enUS.lua (English US)
+# - Locales\deDE.lua (German)
+# - Locales\frFR.lua (French)
+# - Locales\esES.lua (Spanish Spain)
+# - Locales\zhCN.lua (Chinese Simplified)
+# etc.
+```
+
+#### Conditional File Loading
+Combine inline variables with AllowLoadGameType conditions:
+```
+# Load different files based on game type
+MainlineFeatures.lua [AllowLoadGameType mainline]
+ClassicFeatures.lua [AllowLoadGameType vanilla, tbc, wrath, cata]
+
+# Using Family variable
+[Family]\Core.lua
+[Family]\UI.lua
+
+# Conditional with variables
+RetailUI.lua [AllowLoadGameType mainline]
+ClassicUI.lua [AllowLoadGameType classic]
+```
+
+**Complete example using inline variables:**
+```
+## Interface: 120000
+## Title: MultiPlatform Addon
+## Version: 1.0.0
+
+# Shared core
+Core.lua
+
+# Family-specific initialization
+[Family]\Init.lua
+
+# Locale-specific strings (loads only matching locale file)
+Locales\[TextLocale].lua
+
+# Conditional modules
+RetailModule.lua [AllowLoadGameType mainline]
+ClassicModule.lua [AllowLoadGameType vanilla, tbc, wrath]
 ```
 
 ---
@@ -559,6 +700,180 @@ frame:SetScript("OnEvent", function(self, event)
     end
 end)
 ```
+
+---
+
+## C_AddOns API Reference
+
+The `C_AddOns` namespace provides functions for querying and managing addon information programmatically.
+
+### Core Functions
+
+```lua
+-- Get number of addons
+local count = C_AddOns.GetNumAddOns()
+
+-- Get addon info by index or name
+local name, title, notes, loadable, reason, security = C_AddOns.GetAddOnInfo(indexOrName)
+
+-- Check if addon is loaded
+local isLoaded = C_AddOns.IsAddOnLoaded(indexOrName)
+
+-- Load an addon (LoadOnDemand addons)
+local loaded, reason = C_AddOns.LoadAddOn(name)
+
+-- Enable/disable addon for next session
+C_AddOns.EnableAddOn(name, character)
+C_AddOns.DisableAddOn(name, character)
+
+-- Check enable state
+local enabled = C_AddOns.GetAddOnEnableState(name, character)
+```
+
+### New Functions (11.x and 12.0)
+
+```lua
+-- Get addon interface version (11.0.5+)
+local interfaceVersion = C_AddOns.GetAddOnInterfaceVersion(name)
+
+-- Access another addon's namespace table (11.1.7+)
+-- Requires ## AllowAddOnTableAccess: 1 in target addon's TOC
+local addonTable = C_AddOns.GetAddOnLocalTable("OtherAddonName")
+
+-- Check for load errors (11.0.5+)
+local hasError = C_AddOns.DoesAddOnHaveLoadError(name)
+
+-- Check if addon is default enabled (11.1.0+)
+local isDefaultEnabled = C_AddOns.IsAddOnDefaultEnabled(name)
+
+-- Individual info functions (cleaner than GetAddOnInfo)
+local name = C_AddOns.GetAddOnName(index)
+local notes = C_AddOns.GetAddOnNotes(indexOrName)
+local security = C_AddOns.GetAddOnSecurity(indexOrName)
+local title = C_AddOns.GetAddOnTitle(indexOrName)
+```
+
+### Usage Examples
+
+```lua
+-- List all loaded addons
+local count = C_AddOns.GetNumAddOns()
+for i = 1, count do
+    local name = C_AddOns.GetAddOnName(i)
+    if C_AddOns.IsAddOnLoaded(name) then
+        local title = C_AddOns.GetAddOnTitle(name)
+        local version = C_AddOns.GetAddOnInterfaceVersion(name)
+        print(format("%s (Interface: %d)", title, version))
+    end
+end
+
+-- Access another addon's API (requires AllowAddOnTableAccess)
+local DBM = C_AddOns.GetAddOnLocalTable("DBM-Core")
+if DBM and DBM.RegisterCallback then
+    DBM.RegisterCallback(myCallback)
+end
+```
+
+---
+
+## Addon Profiling (11.0.7+)
+
+The `C_AddOnProfiler` namespace provides performance metrics for addon debugging and optimization.
+
+### Enabling Profiling
+
+Addon profiling must be enabled via:
+1. `/console scriptProfile 1` (requires UI reload)
+2. Or enable in Interface Options > AddOns > Addon CPU Usage
+
+### Profiler Functions
+
+```lua
+-- Check if profiling is enabled
+local isEnabled = C_AddOnProfiler.IsEnabled()
+
+-- Get specific metric for an addon
+local value = C_AddOnProfiler.GetAddOnMetric(addonName, metric)
+
+-- Get overall metric across all addons
+local value = C_AddOnProfiler.GetOverallMetric(metric)
+
+-- Measure a specific function call (11.1.7+)
+local elapsed = C_AddOnProfiler.MeasureCall(func, ...)
+
+-- Get profiler tick rate (11.1.7+)
+local ticksPerSecond = C_AddOnProfiler.GetTicksPerSecond()
+```
+
+### Available Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `SessionAverageTime` | Average time per frame across session |
+| `RecentAverageTime` | Average time per frame (recent samples) |
+| `EncounterAverageTime` | Average time during boss encounters |
+| `LastTime` | Time taken in last frame |
+| `PeakTime` | Maximum time recorded |
+| `CountTimeOver1Ms` | Frames exceeding 1ms |
+| `CountTimeOver5Ms` | Frames exceeding 5ms |
+| `CountTimeOver10Ms` | Frames exceeding 10ms |
+| `CountTimeOver50Ms` | Frames exceeding 50ms |
+
+### Profiling Examples
+
+```lua
+-- Check addon performance
+if C_AddOnProfiler.IsEnabled() then
+    local avgTime = C_AddOnProfiler.GetAddOnMetric("MyAddon", "RecentAverageTime")
+    local peakTime = C_AddOnProfiler.GetAddOnMetric("MyAddon", "PeakTime")
+    local slowFrames = C_AddOnProfiler.GetAddOnMetric("MyAddon", "CountTimeOver5Ms")
+
+    print(format("MyAddon - Avg: %.3fms, Peak: %.3fms, Slow frames: %d",
+        avgTime * 1000, peakTime * 1000, slowFrames))
+end
+
+-- Measure specific function performance (11.1.7+)
+local function HeavyOperation()
+    -- Complex calculation
+end
+
+local elapsed = C_AddOnProfiler.MeasureCall(HeavyOperation)
+print(format("Operation took %.3fms", elapsed * 1000))
+```
+
+### Performance Optimization Tips
+
+Based on profiler data:
+- `RecentAverageTime > 1ms`: Consider optimizing frequent operations
+- `CountTimeOver5Ms > 0`: Look for expensive operations causing hitches
+- `PeakTime` high: Investigate startup or event burst handling
+- `EncounterAverageTime` high: Optimize combat-related code
+
+---
+
+## Security Changes in 12.0.0 (Midnight)
+
+The 12.0.0 expansion introduces significant security changes affecting addon development:
+
+### Secret Values System
+
+12.0.0 expands the "secret values" system for combat security:
+- Certain API return values become "tainted" during combat
+- Tainted values cannot be used for secure operations
+- Addons may need to cache values before combat or handle nil returns
+
+### Impact on Addons
+
+- **Action button addons**: May need additional checks for tainted values
+- **Unit frame addons**: Some unit information may be restricted during combat
+- **Macro/automation addons**: Increased restrictions on programmatic actions
+
+### Recommendations
+
+1. Test addons thoroughly on PTR before 12.0.0 launch
+2. Cache important values during `PLAYER_REGEN_ENABLED`
+3. Check `InCombatLockdown()` before secure operations
+4. Reference `11_API_Migration_Guide.md` for detailed migration steps
 
 ---
 
@@ -1292,7 +1607,7 @@ SimpleAddon/
 
 **SimpleAddon.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: Simple Addon
 ## Author: YourName
 ## Version: 1.0.0
@@ -1327,7 +1642,7 @@ GoldTracker/
 
 **GoldTracker.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: Gold Tracker
 ## Author: YourName
 ## Version: 1.0.0
@@ -1422,7 +1737,7 @@ RaidFrames/
 
 **RaidFrames.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: Raid Frames
 ## Author: YourName
 ## Version: 2.0.0
@@ -1517,7 +1832,7 @@ MultiVersion/
 
 **MultiVersion_Mainline.toc:**
 ```
-## Interface: 110207
+## Interface: 120000
 ## Title: MultiVersion
 ## Author: YourName
 ## Version: 1.0.0
@@ -1619,8 +1934,8 @@ end
 
 ---
 
-**Document Version:** 1.0.0
-**Game Version:** 11.2.7 (The War Within)
-**Last Updated:** 2025-10-19
+**Document Version:** 2.0.0
+**Game Version:** 12.0.0 (Midnight)
+**Last Updated:** 2026-01-20
 
 <!-- CLAUDE_SKIP_END -->
