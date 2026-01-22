@@ -56,15 +56,18 @@ When reviewing addons with multiple files:
 ## Quick Reference (for simple questions only)
 
 **LARGE DOCUMENTATION FILES** (delegate reading to subagent):
-- Events Index (~3,900 lines)
 - Addon Structure (~1,600 lines)
 - UI Framework (~1,200 lines)
+- Housing System Guide (~1,800 lines)
+- API Migration Guide (~1,950 lines)
 
 **CRITICAL RULES** (remind subagent when delegating):
 - Use `ADDON_LOADED` event to initialize saved variables
 - Check `InCombatLockdown()` before restricted operations
 - Use modern C_* namespaced APIs (not deprecated globals)
 - Localize global lookups for performance
+- Handle Secret Values in combat (12.0.0+) - use `issecretvalue()` to check
+- Use C_ActionBar, C_CombatLog namespaces (globals removed in 12.0.0)
 
 ## Workflow
 
