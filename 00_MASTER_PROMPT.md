@@ -59,14 +59,18 @@ The Midnight expansion (12.0.0) introduced massive security changes that broke m
 
 **Secret Values System:**
 - Many APIs now return "secret values" during combat that cannot be read by addons
+- `UnitHealth()`, `UnitHealthMax()`, `UnitPower()`, `UnitPowerMax()` return SECRET values
+- Secret values CANNOT be used for arithmetic, comparisons, or string concatenation
+- Native StatusBar frames accept secret values directly (handled at C++ level)
+- Use `UnitHealthPercent(unit, usePredicted, CurveConstants.ScaleTo100)` for custom bars (returns NON-SECRET 0-100)
+- Use `issecretvalue(value)` to check if a value is secret
 - Damage meters, combat logs, and threat meters fundamentally changed
-- New official APIs replace removed functionality: `C_DamageMeter`, `C_EncounterTimeline`, `C_EncounterWarnings`
-- Addons must adapt to callback-based data retrieval for combat information
+- C_DamageMeter API data is also SECRET-protected (unusable by third-party addons)
 
 **Removed/Changed APIs:**
 - Global action bar functions REMOVED - use `C_ActionBar` namespace
 - Combat log parsing functions REMOVED - use `C_CombatLog` namespace
-- Many `UnitX()` functions return secret values in combat
+- `UnitHealth()`, `UnitPower()` return secret values in combat (use `UnitHealthPercent()`/`UnitPowerPercent()` for math)
 - Transmog system completely redesigned - old APIs deprecated
 
 **New Official Features:**
@@ -131,6 +135,13 @@ Every addon requires a `.toc` file specifying metadata and file load order.
 ## Dependencies: Addon1, Addon2
 ## OptionalDeps: OptionalAddon
 ```
+
+**Comma-Separated Interface Versions (10.1.0+):**
+Since Patch 10.1.0, you can support multiple WoW versions with a single TOC file:
+```
+## Interface: 120000, 110207, 40402, 11508
+```
+This eliminates the need for separate `_Mainline.toc`, `_Classic.toc` files when your addon code is identical across versions. Use multiple TOC files only when you need to load different files per version.
 
 **File Load Order:** Files are loaded in the order listed (Lua then XML pairs)
 
@@ -250,10 +261,23 @@ EventRegistry:UnregisterCallback("EditMode.Enter", addonName)
 -- Check if value is a secret before using
 local function SafeGetUnitName(unit)
     local name = UnitName(unit)
-    if name and not C_SecretValue.IsSecretValue(name) then
+    if name and not issecretvalue(name) then
         return name
     end
     return "Unknown"
+end
+
+-- For health bars with custom textures, use UnitHealthPercent (NOT secret):
+local function UpdateCustomHealthBar(unit, barTexture, maxWidth)
+    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100) or 0
+    local width = math.max(1, (healthPercent / 100) * maxWidth)
+    barTexture:SetWidth(width)
+end
+
+-- For native StatusBar frames, secret values work directly:
+local function UpdateNativeStatusBar(unit, statusBar)
+    statusBar:SetMinMaxValues(0, UnitHealthMax(unit))  -- Secret OK
+    statusBar:SetValue(UnitHealth(unit))               -- Secret OK
 end
 ```
 
@@ -272,11 +296,10 @@ end
 
 **Combat Data Access (12.0+):**
 ```lua
--- Use official damage meter API instead of CLEU parsing
-if C_DamageMeter then
-    local summary = C_DamageMeter.GetDamageSummary()
-    -- Process official data
-end
+-- NOTE: C_DamageMeter API data is SECRET-protected and unusable by addons!
+-- Third-party damage meters CANNOT function in 12.0.0
+-- Players must use Blizzard's built-in damage meter (Shift+P)
+-- See 12_API_Migration_Guide.md for details
 ```
 
 ## File Organization Best Practices

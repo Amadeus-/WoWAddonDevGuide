@@ -25,9 +25,14 @@ Before starting addon development in 12.0.0 (Midnight), be aware of these major 
 
 ### "Addon Apocalypse" - Secret Values
 Combat-sensitive data is now hidden from addons:
-- Damage, healing, and resource values are "secret values"
+- `UnitHealth()`, `UnitHealthMax()`, `UnitPower()`, `UnitPowerMax()` return SECRET values during combat
+- Secret values CANNOT be used for arithmetic, comparisons, or string concatenation
+- **Solution for custom health bars:** Use `UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)` - returns NON-SECRET 0-100 percentage
+- **Native StatusBar frames** accept secret values directly (handled at C++ level)
 - Traditional damage meters/combat logs no longer work
-- Use Blizzard's official `C_DamageMeter` API instead
+- **⚠️ `C_DamageMeter` API data is ALSO secret-protected** - Third-party damage meters cannot function in 12.0.0+
+- Players must use Blizzard's built-in damage meter (Shift+P or Encounter Journal)
+- See `12_API_Migration_Guide.md` for comprehensive secret value patterns
 
 ### API Migrations
 Many global functions have been removed. Use C_* namespaces:
@@ -48,7 +53,7 @@ Many global functions have been removed. Use C_* namespaces:
 ### Key New Namespaces
 - `C_ActionBar` - Action bar management
 - `C_CombatLog` - Combat log access (limited by secret values)
-- `C_DamageMeter` - Official damage/healing meter data
+- `C_DamageMeter` - ⛔ **SECRET-PROTECTED** - Data unusable by third-party addons
 - `C_Housing` - Player housing system (see [11_Housing_System_Guide.md](11_Housing_System_Guide.md))
 
 ## How to Use This Knowledge Base
@@ -126,6 +131,12 @@ D:\Games\World of Warcraft\_retail_\Interface\AddOns\MyFirstAddon\
 
 MyFirstAddon.lua
 ```
+
+**Note:** Since Patch 10.1.0, you can support multiple WoW versions with comma-separated Interface values:
+```
+## Interface: 120000, 110207, 40402, 11508
+```
+This means one TOC file works for Retail, Classic, and everything in between (if your code is compatible). See `04_Addon_Structure.md` for details.
 
 ### Step 3: Create Lua File
 **MyFirstAddon.lua:**
@@ -240,8 +251,9 @@ local quests = C_QuestLog.GetAllCompletedQuestIDs();
 -- Action bar (12.0.0 - use C_ActionBar)
 local actionType, id, subType = C_ActionBar.GetActionInfo(slot);
 
--- Damage meter (12.0.0 - official API)
-local encounterData = C_DamageMeter.GetEncounterData();
+-- Damage meter (12.0.0) - WARNING: Data is SECRET-PROTECTED!
+-- Third-party addons CANNOT use this API - data values are hidden
+-- local encounterData = C_DamageMeter.GetEncounterData(); -- Returns secret values!
 ```
 
 ### UI Frames

@@ -8,11 +8,14 @@ color: purple
 ## Local Paths (UPDATE THESE FOR YOUR SYSTEM)
 
 ```
-ADDONS_DIR: D:\Games\World of Warcraft\_retail_\Interface\AddOns\
-GUIDE_DIR:  D:\Games\World of Warcraft\_retail_\Interface\+++WoW Addon Development Guide (AI Generated)+++\
+ADDONS_DIR:    D:\Games\World of Warcraft\_retail_\Interface\AddOns\
+GUIDE_DIR:     D:\Games\World of Warcraft\_retail_\Interface\+++WoW Addon Development Guide (AI Generated)+++\
+BLIZZARD_SRC:  D:\Games\World of Warcraft\_retail_\Interface\+wow-ui-source+ (12.0.0)\
 ```
 
-All documentation files are in GUIDE_DIR. All addons should be saved to ADDONS_DIR.
+All documentation files are in GUIDE_DIR. All addons should be saved to ADDONS_DIR. Blizzard's official UI source code is in BLIZZARD_SRC.
+
+*(<u>Note</u>:  The BLIZZARD_SRC directory is the **current** source directory.  If you want to compare with the previous release [i.e., if you're updating an addon from one API version to another], the most recent previous source directory is at "D:\Games\World of Warcraft\_retail_\Interface\+wow-ui-source+ (11.2.7)")*
 
 ---
 
@@ -35,6 +38,21 @@ You are an expert World of Warcraft addon developer with deep knowledge of Lua, 
 - `10_Advanced_Techniques.md` - Advanced Techniques
 - `11_Housing_System_Guide.md` - Housing System (C_Housing APIs)
 - `12_API_Migration_Guide.md` - API Migration (11.0-12.0 changes)
+
+**BLIZZARD UI SOURCE (BLIZZARD_SRC) - Check this when:**
+- Researching how Blizzard implements specific UI patterns
+- Looking for examples of secure frame/button usage
+- Understanding Menu, Dropdown, or Flyout implementations
+- Debugging API behavior by seeing official usage
+- Finding template definitions (XML files)
+- Researching any undocumented or unclear API behavior
+
+Key files to check in BLIZZARD_SRC:
+- `Interface/SharedXML/SecureTemplates.lua` - Secure button patterns
+- `Interface/SharedXML/Menu/` - Modern menu system (12.0.0+)
+- `Interface/FrameXML/SpellFlyout.lua` - Flyout implementation
+- `Interface/FrameXML/ActionButton*.lua` - Action bar patterns
+- Search for specific API names to find usage examples
 
 **IMPORTANT: When reading these files, IGNORE all content between `<!-- CLAUDE_SKIP_START -->` and `<!-- CLAUDE_SKIP_END -->` markers. These sections contain human-oriented content not needed for AI code assistance.**
 
@@ -91,6 +109,41 @@ You are an expert World of Warcraft addon developer with deep knowledge of Lua, 
 - Assume API availability without version checks
 - Use global action bar functions like GetActionInfo() (use C_ActionBar.GetActionInfo)
 - Parse combat log for damage meters (use C_DamageMeter API in 12.0.0+)
+
+## Debug Logging Best Practice
+
+**When adding debug output to addons, ALWAYS use dual logging (file + chat):**
+
+```lua
+-- Create a SavedVariable for debug logs (add to .toc file)
+MyAddonDebugLog = MyAddonDebugLog or {}
+
+local function DebugLog(msg)
+    local timestamp = date("%H:%M:%S")
+    local entry = timestamp .. " " .. msg
+    table.insert(MyAddonDebugLog, entry)
+    -- Keep max 1000 entries
+    while #MyAddonDebugLog > 1000 do
+        table.remove(MyAddonDebugLog, 1)
+    end
+    print("MyAddon DEBUG: " .. msg)
+end
+
+-- Add slash command to view/copy logs
+SLASH_MYADDON_DEBUG1 = "/myaddondebug"
+SlashCmdList["MYADDON_DEBUG"] = function(msg)
+    if msg == "clear" then
+        wipe(MyAddonDebugLog)
+        print("Debug log cleared")
+    else
+        -- Show copyable editbox with log contents
+    end
+end
+```
+
+This allows users to easily share debug output by:
+1. Running `/myaddondebug` to open a copyable editbox
+2. Or checking SavedVariables file after `/reload`
 
 ## Workflow
 

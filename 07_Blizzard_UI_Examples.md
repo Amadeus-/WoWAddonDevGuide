@@ -764,82 +764,63 @@ end)
 
 ## Damage Meter
 
-### Official Damage Meter (12.0 New)
+### Official Damage Meter (12.0 New) - ⛔ SECRET-PROTECTED
+
+> **⚠️ CRITICAL (Verified January 2026):** While `Blizzard_DamageMeter` addon and `C_DamageMeter` API exist, **the data is protected as "secret values"** and cannot be accessed by third-party addons. The code examples below show the API structure but **WILL NOT WORK** in practice.
 
 **Source Files:**
 - `Blizzard_DamageMeter\Blizzard_DamageMeter.lua`
 - `Blizzard_DamageMeter\Blizzard_DamageMeterTemplates.xml`
 
-**Key APIs:**
+**Why Blizzard's Code Works But Yours Won't:**
+Blizzard's own UI code runs in a secure execution context and can access secret values. Third-party addon code runs in an insecure context and cannot.
+
+**What Happens When You Try:**
 ```lua
--- Access official damage meter data
--- Note: These APIs are for reading data, not modifying the official meter
-
--- Check if damage meter is available
+-- The API exists and IsDamageMeterAvailable() returns true
 if C_DamageMeter then
-    -- Get current encounter data
-    local encounterData = C_DamageMeter.GetCurrentEncounterData()
+    local available = C_DamageMeter.IsDamageMeterAvailable() -- Returns true!
 
-    -- Get player damage stats
-    local playerStats = C_DamageMeter.GetPlayerStats("player")
-    if playerStats then
-        local totalDamage = playerStats.totalDamage
-        local dps = playerStats.dps
-        local healing = playerStats.totalHealing
-        local hps = playerStats.hps
-    end
+    -- You can get session data...
+    local sessionData = C_DamageMeter.GetCombatSessionFromType(
+        Enum.DamageMeterSessionType.Overall,
+        Enum.DamageMeterType.DamageDone
+    )
 
-    -- Get group ranking
-    local rankings = C_DamageMeter.GetDamageRankings()
-    for i, entry in ipairs(rankings) do
-        print(format("%d. %s - %s DPS", i, entry.name, AbbreviateLargeNumbers(entry.dps)))
+    -- ...but the VALUES inside are SECRET:
+    for _, source in ipairs(sessionData.combatSources) do
+        -- These throw "attempt to compare (a secret value)" errors:
+        if source.name == "SomePlayer" then end  -- ERROR!
+
+        -- These return <no value> (secret):
+        local damage = source.totalAmount     -- SECRET
+        local dps = source.amountPerSecond    -- SECRET
+        local guid = source.sourceGUID        -- SECRET
+
+        -- Only cosmetic data works (useless without names/amounts):
+        local class = source.classFilename    -- Works: "WARRIOR"
+        local isMe = source.isLocalPlayer     -- Works: true
     end
 end
-
--- Events for damage meter updates
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("DAMAGE_METER_UPDATE")
-frame:RegisterEvent("DAMAGE_METER_ENCOUNTER_START")
-frame:RegisterEvent("DAMAGE_METER_ENCOUNTER_END")
-frame:SetScript("OnEvent", function(self, event, ...)
-    if event == "DAMAGE_METER_UPDATE" then
-        -- Refresh display
-    elseif event == "DAMAGE_METER_ENCOUNTER_START" then
-        local encounterID, encounterName = ...
-        print("Encounter started:", encounterName)
-    elseif event == "DAMAGE_METER_ENCOUNTER_END" then
-        local encounterID, success = ...
-        print("Encounter ended:", success and "Success" or "Wipe")
-    end
-end)
 ```
 
-**Integration with Custom UI:**
+**The Bottom Line:**
+- `C_DamageMeter` is for Blizzard's built-in meter ONLY
+- Third-party addons CANNOT create custom damage meters in 12.0.0+
+- Players must use Blizzard's meter (Shift+P or Encounter Journal)
+
+**Events (Fire But Contain No Usable Data):**
 ```lua
--- Create a mini damage meter display
-local miniMeter = CreateFrame("Frame", "MyMiniDamageMeter", UIParent, "BackdropTemplate")
-miniMeter:SetSize(200, 150)
-miniMeter:SetPoint("TOPRIGHT", -20, -200)
-miniMeter:SetBackdrop({
-    bgFile = "Interface\\Buttons\\WHITE8x8",
-    edgeFile = "Interface\\Buttons\\WHITE8x8",
-    edgeSize = 1,
-})
-miniMeter:SetBackdropColor(0, 0, 0, 0.8)
-miniMeter:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
-
--- Update function
-local function UpdateMiniMeter()
-    if not C_DamageMeter then return end
-
-    local rankings = C_DamageMeter.GetDamageRankings()
-    -- Update your display bars here
-end
-
--- Hook to official meter updates
-if C_DamageMeter then
-    hooksecurefunc(C_DamageMeter, "RefreshDisplay", UpdateMiniMeter)
-end
+-- These events fire, but you can't do anything useful with them
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("DAMAGE_METER_COMBAT_SESSION_UPDATED")
+frame:RegisterEvent("DAMAGE_METER_CURRENT_SESSION_UPDATED")
+frame:RegisterEvent("DAMAGE_METER_RESET")
+frame:SetScript("OnEvent", function(self, event, ...)
+    -- Events fire, but when you try to read the data, it's all secret
+    print("Event fired:", event)  -- This works
+    -- Actually using the data? Nope, it's secret.
+end)
 ```
 
 ---

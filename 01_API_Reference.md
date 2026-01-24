@@ -63,14 +63,14 @@ Functions for querying information about units (players, NPCs, pets, etc.)
 **Key Functions**:
 ```lua
 UnitName("unit")                    -- Get unit's name
-UnitHealth("unit")                  -- Get current health
-UnitHealthMax("unit")               -- Get maximum health
+UnitHealth("unit")                  -- Get current health (SECRET in combat - 12.0.0)
+UnitHealthMax("unit")               -- Get maximum health (SECRET in combat - 12.0.0)
 UnitHealthMissing("unit")           -- Get missing health (12.0.0)
-UnitHealthPercent("unit")           -- Get health as percentage (12.0.0)
-UnitPower("unit", powerType)        -- Get current power (mana, energy, etc.)
-UnitPowerMax("unit", powerType)     -- Get maximum power
+UnitHealthPercent("unit", usePredicted, curveConstant) -- Get health % (NOT SECRET - 12.0.0)
+UnitPower("unit", powerType)        -- Get current power (SECRET in combat - 12.0.0)
+UnitPowerMax("unit", powerType)     -- Get maximum power (SECRET in combat - 12.0.0)
 UnitPowerMissing("unit", powerType) -- Get missing power (12.0.0)
-UnitPowerPercent("unit", powerType) -- Get power as percentage (12.0.0)
+UnitPowerPercent("unit", powerType, curveConstant) -- Get power % (NOT SECRET - 12.0.0)
 UnitClass("unit")                   -- Get class name and class file
 UnitRace("unit")                    -- Get race name and race file
 UnitLevel("unit")                   -- Get level
@@ -84,7 +84,41 @@ UnitIsMinion("unit")                -- Check if unit is a minion (12.0.0)
 UnitCreatureID("unit")              -- Get creature ID directly (12.0.0)
 UnitBuff("unit", index or "name")   -- Get buff information
 UnitDebuff("unit", index or "name") -- Get debuff information
+UnitGetTotalAbsorbs("unit")         -- Get absorb shield total (SECRET in combat - 12.0.0)
+UnitGetTotalHealAbsorbs("unit")     -- Get heal absorb total (12.0.0)
+UnitGetIncomingHeals("unit", healer)-- Get incoming heals (SECRET in combat - 12.0.0)
 ```
+
+**Secret Values in Unit APIs (12.0.0 - CRITICAL):**
+
+In WoW 12.0.0, the following Unit APIs return **secret values** during combat:
+- `UnitHealth()`, `UnitHealthMax()`
+- `UnitPower()`, `UnitPowerMax()`
+- `UnitGetTotalAbsorbs()`, `UnitGetIncomingHeals()`
+
+Secret values **CANNOT** be used for arithmetic, comparisons, or string concatenation:
+```lua
+-- THESE FAIL with secret values:
+local percent = UnitHealth("target") / UnitHealthMax("target")  -- ERROR!
+if UnitHealth("target") > 0 then  -- ERROR!
+print("Health: " .. UnitHealth("target"))  -- ERROR!
+```
+
+**Use UnitHealthPercent/UnitPowerPercent for custom UI calculations:**
+```lua
+-- Returns NON-SECRET percentage (0-100)
+local healthPct = UnitHealthPercent("target", false, CurveConstants.ScaleTo100)
+local width = (healthPct / 100) * BAR_WIDTH  -- Safe arithmetic!
+```
+
+**Native StatusBar frames accept secret values directly:**
+```lua
+local bar = CreateFrame("StatusBar", nil, parent)
+bar:SetMinMaxValues(0, UnitHealthMax("target"))  -- Works with secrets!
+bar:SetValue(UnitHealth("target"))               -- Works with secrets!
+```
+
+See `12_API_Migration_Guide.md` for comprehensive secret value handling patterns.
 
 **New Event Callback System (12.0.0)**:
 ```lua

@@ -406,24 +406,59 @@ end
 
 ### TOC File Strategy
 
-**Create multiple TOC files:**
+#### Option 1: Comma-Separated Interface Versions (10.1.0+, Recommended)
+
+Since Patch 10.1.0, you can declare multiple Interface versions in a single TOC file:
+
 ```
 MyAddon/
-├── MyAddon_Mainline.toc    ## Interface: 120000
-├── MyAddon_Vanilla.toc     ## Interface: 11503
-├── MyAddon_Cata.toc        ## Interface: 40400
+├── MyAddon.toc
 └── Core.lua
 ```
 
-**In TOC:**
+**MyAddon.toc:**
+```
+## Interface: 120000, 110207, 50503, 40402, 11508
+## Title: My Addon
+## Version: 1.0.0
+
+Core.lua
+```
+
+**Use comma-separated versions when:**
+- Your addon code is identical across all versions
+- API differences are handled in Lua with runtime detection
+- Simpler maintenance is preferred
+
+#### Option 2: Multiple TOC Files (When Needed)
+
+**Create multiple TOC files when you need different files per version:**
+```
+MyAddon/
+├── MyAddon_Mainline.toc    ## Interface: 120000
+├── MyAddon_Vanilla.toc     ## Interface: 11508
+├── MyAddon_Cata.toc        ## Interface: 40402
+├── Core.lua                # Shared
+├── RetailOnly.lua          # Only in Mainline TOC
+└── ClassicOnly.lua         # Only in Classic TOCs
+```
+
+**In Mainline TOC:**
 ```
 ## Interface: 120000
 ## Title: My Addon
-## X-Min-Interface: 110000
-## X-Max-Interface: 129999
 
 Core.lua
-RetailOnly.lua  # Only in Mainline TOC
+RetailOnly.lua
+```
+
+**In Classic TOC:**
+```
+## Interface: 11508
+## Title: My Addon
+
+Core.lua
+ClassicOnly.lua
 ```
 
 ---

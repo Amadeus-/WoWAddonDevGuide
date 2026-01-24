@@ -700,54 +700,61 @@ ignore:
 
 The 12.0.0 (Midnight) expansion introduces significant API changes that affect most addon categories. This section documents the impact and migration strategies for each major category.
 
-### Damage Meters (Details, Skada, Recount)
+### Damage Meters (Details, Skada, Recount) - ⛔ CANNOT FUNCTION IN 12.0.0+
+
+> **⚠️ CRITICAL (Verified January 2026):** Third-party damage meters **CANNOT function in WoW 12.0.0+**. Both paths are blocked:
+> 1. `COMBAT_LOG_EVENT_UNFILTERED` registration throws `ADDON_ACTION_FORBIDDEN`
+> 2. `C_DamageMeter` API data is protected as "secret values" - unusable by addons
 
 **12.0 Changes:**
-- **Official C_DamageMeter API** - Blizzard now provides native damage meter functionality
-- **C_CombatLog namespace required** - Direct combat log parsing still works but must use namespaced API
-- **Secret values system** - Real-time combat data may show approximated values during encounters
+- **Combat log events BLOCKED** - `RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")` throws `ADDON_ACTION_FORBIDDEN`
+- **C_DamageMeter data is SECRET** - Key values (`name`, `totalAmount`, `amountPerSecond`) are hidden
+- **NO migration path exists** - Third-party damage meters are intentionally disabled
 
-**Migration Strategy:**
+**What Damage Meter Addons Should Do:**
 ```lua
--- Check for official damage meter API
-local hasOfficialMeter = C_DamageMeter ~= nil;
+-- The ONLY valid response in 12.0.0+ is to inform users
+local function OnAddonLoaded(self, event, addonName)
+    if addonName == "YourDamageMeter" then
+        local _, _, _, tocVersion = GetBuildInfo()
+        if tocVersion >= 120000 then
+            -- Display warning to users
+            print("|cFFFF6600[YourDamageMeter]|r WoW 12.0.0 has disabled third-party damage meters.")
+            print("|cFFFF6600[YourDamageMeter]|r Please use Blizzard's built-in meter (Shift+P or Encounter Journal).")
 
--- Modern combat log event registration (12.0+)
-local function RegisterCombatLogEvents()
-    -- Use C_CombatLog namespace for parsing
-    if C_CombatLog and C_CombatLog.GetCurrentEventInfo then
-        -- Modern approach
-        frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED");
-    end
-end
-
--- Handle combat log events with secret value awareness
-local function OnCombatLogEvent()
-    local timestamp, subevent, hideCaster, sourceGUID, sourceName,
-          sourceFlags, sourceRaidFlags, destGUID, destName, destFlags,
-          destRaidFlags = CombatLogGetCurrentEventInfo();
-
-    -- Note: Damage values may be approximated (secrets) in 12.0
-    -- Consider integrating with C_DamageMeter for accurate totals
-    if subevent == "SWING_DAMAGE" then
-        local amount, overkill, school, resisted, blocked, absorbed,
-              critical, glancing, crushing, isOffHand = select(12, CombatLogGetCurrentEventInfo());
-
-        -- amount may be a secret value - handle gracefully
-        if type(amount) == "number" then
-            ProcessDamage(sourceGUID, destGUID, amount);
+            -- Hide addon UI
+            if YourMeterFrame then
+                YourMeterFrame:Hide()
+            end
         end
     end
 end
 
--- Optional: Integrate with official meter
-local function GetOfficialMeterData()
-    if C_DamageMeter and C_DamageMeter.GetEncounterData then
-        return C_DamageMeter.GetEncounterData();
-    end
-    return nil;
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript("OnEvent", OnAddonLoaded)
+```
+
+**Why C_DamageMeter Doesn't Work (Verified):**
+```lua
+-- The API exists and IsDamageMeterAvailable() returns true, BUT:
+local sessionData = C_DamageMeter.GetCombatSessionFromType(sessionType, meterType)
+for _, source in ipairs(sessionData.combatSources) do
+    -- These are SECRET (throw errors when accessed):
+    print(source.name)            -- ERROR: "attempt to compare (a secret value)"
+    print(source.totalAmount)     -- <no value> - SECRET
+    print(source.amountPerSecond) -- <no value> - SECRET
+
+    -- Only cosmetic data works (useless without names/amounts):
+    print(source.classFilename)   -- Works: "DEATHKNIGHT"
+    print(source.isLocalPlayer)   -- Works: true
 end
 ```
+
+**Bottom Line:**
+- Details!, Skada, Recount, and all similar addons **cannot be fixed** for 12.0.0+
+- Players must use Blizzard's built-in damage meter
+- Addon authors should display clear warning messages and consider EOL for 12.0.0+
 
 ### Boss Mods (DBM, BigWigs, LittleWigs)
 
@@ -1350,7 +1357,7 @@ APICompat.features = {
     hasEncodingUtil = C_EncodingUtil ~= nil,
     hasNewActionBar = C_ActionBar ~= nil and C_ActionBar.GetActionInfo ~= nil,
     hasNewTransmog = C_TransmogOutfitInfo ~= nil,
-    hasOfficialDamageMeter = C_DamageMeter ~= nil,
+    hasOfficialDamageMeter = C_DamageMeter ~= nil, -- NOTE: API exists but data is secret-protected!
     hasEncounterTimeline = C_EncounterTimeline ~= nil,
     hasEncounterWarnings = C_EncounterWarnings ~= nil,
     hasVoidStorage = C_VoidStorage ~= nil,

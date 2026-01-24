@@ -1,6 +1,115 @@
 <\!-- CLAUDE_SKIP_START -->
 # WoW Addon Development Knowledge Base - Update Log
 
+## Version 2.2 - 2026-01-22
+
+### Critical Discovery: C_DamageMeter API Data is SECRET-PROTECTED
+
+**Summary:**
+Through real-world testing of the Recount damage meter addon, we discovered that **C_DamageMeter API data is protected as "secret values"** and cannot be used by third-party addons. This means **no third-party damage meters can function in WoW 12.0.0+**.
+
+**Files Updated:**
+- `12_API_Migration_Guide.md` - Complete rewrite of C_DamageMeter section and Example 5
+
+**What Was Discovered:**
+
+When attempting to use C_DamageMeter API (after combat log was blocked), we found:
+
+1. **`C_DamageMeter.IsDamageMeterAvailable()` returns `true`** - The API exists and claims to be available
+2. **`C_DamageMeter.GetCombatSessionFromType()` returns data** - You get a table with entries
+3. **BUT the actual data values are SECRET:**
+   ```lua
+   source.name           -- SECRET: "attempt to compare (a secret value)"
+   source.totalAmount    -- SECRET: <no value>
+   source.amountPerSecond -- SECRET: <no value>
+   source.sourceGUID     -- SECRET: <no value>
+   ```
+4. **Only cosmetic fields are accessible:**
+   ```lua
+   source.classFilename  -- Works: "DEATHKNIGHT"
+   source.isLocalPlayer  -- Works: true
+   source.specIconID     -- Works: 135770
+   ```
+
+**Error Message When Trying to Use Secret Values:**
+```
+attempt to compare local 'name' (a secret value)
+```
+
+**What This Means:**
+| Blocked Path | Error |
+|--------------|-------|
+| Combat log events | `ADDON_ACTION_FORBIDDEN` on registration |
+| C_DamageMeter data | "secret value" protection on key fields |
+
+**Conclusion:**
+- C_DamageMeter API is designed **ONLY for Blizzard's built-in UI**
+- Third-party damage meters (Recount, Skada, Details!) **cannot function in 12.0.0+**
+- There is NO workaround - players must use Blizzard's meter
+- This is intentional as part of Blizzard's "addon disarmament"
+
+**Documentation Changes:**
+- Marked C_DamageMeter section as "⛔ SECRET-PROTECTED (UNUSABLE BY ADDONS)"
+- Added table showing which fields are secret vs accessible
+- Rewrote Example 5 to show there is NO valid migration path
+- Added code example showing how to display warning to users
+
+**Verified By:**
+- Real-world testing with Recount addon in WoW 12.0.0
+- Error captured by BugGrabber/BugSack showing secret value details
+
+---
+
+## Version 2.1 - 2026-01-22
+
+### Critical Fix: Combat Log Events BLOCKED Documentation
+
+**Summary:**
+Updated `12_API_Migration_Guide.md` to accurately document that **combat log events are completely blocked for third-party addons in WoW 12.0.0**. This is a critical correction - the previous documentation showed API migration patterns that **do not work** because event registration itself is blocked.
+
+**Files Updated:**
+- `12_API_Migration_Guide.md` - Added critical warning section, fixed Example 5
+
+**What Was Discovered:**
+
+When attempting to update the Recount damage meter addon for 12.0.0 compatibility, we discovered that:
+
+1. **`Frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")` throws `ADDON_ACTION_FORBIDDEN`** - The event registration itself is blocked, not just the API function calls
+2. **This applies to ALL registration methods:**
+   - `frame:RegisterEvent()` - BLOCKED
+   - `EventRegistry:RegisterFrameEventAndCallback()` - BLOCKED
+   - `RegisterEventCallback()` - BLOCKED
+3. **Using `pcall()` does NOT prevent the error** - The game still raises ADDON_ACTION_FORBIDDEN
+4. **This is intentional** - Blizzard officially stated: "Combat Log Events are no longer available to addons"
+5. **Traditional damage meters CANNOT function in 12.0.0** without major refactoring to use C_DamageMeter API
+
+**Previous (Incorrect) Documentation Implied:**
+```lua
+-- This was shown as working in 12.0.0:
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")  -- DOES NOT WORK!
+```
+
+**Corrected Documentation Now States:**
+```lua
+-- THIS CODE THROWS ADDON_ACTION_FORBIDDEN IN 12.0.0:
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")  -- BLOCKED!
+-- You MUST use C_DamageMeter API instead
+```
+
+**Why This Matters:**
+- Developers relying on the previous documentation would waste time trying to make combat log parsing work
+- Traditional damage meters (Recount, Skada, Details!) need complete architectural rewrites
+- The only path forward is using `C_DamageMeter` API for damage/healing data
+
+**Sources:**
+- [Combat Addon Restrictions Eased in Midnight - Icy Veins](https://www.icy-veins.com/wow/news/combat-addon-restrictions-eased-in-midnight/)
+- [Patch 12.0.0/Planned API changes - Warcraft Wiki](https://warcraft.wiki.gg/wiki/Patch_12.0.0/Planned_API_changes)
+- Real-world testing with Recount addon in WoW 12.0.0
+
+---
+
 ## Version 2.0 - 2026-01-20
 
 ### Major Update: 12.0.0 (Midnight) Compatibility

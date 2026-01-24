@@ -86,6 +86,37 @@ Check popular addons' update notes for insights on what changed.
 | **Battle for Azeroth** | 8.0.0 - 8.3.x | Major UI scale changes, backdrop changes |
 | **Legion** | 7.0.0 - 7.3.x | Protected functions expanded, macro changes |
 
+### Current Interface Version Numbers
+
+Use these values in your `## Interface:` directive. Since **Patch 10.1.0**, you can use comma-separated values to support multiple versions in a single TOC file:
+
+```
+## Interface: 120000, 110207, 50503, 40402, 11508
+```
+
+| Game Client | Version | Interface Number |
+|-------------|---------|-----------------|
+| **Retail (Midnight)** | 12.0.0 | 120000 |
+| **Retail (Midnight)** | 12.0.1 | 120001 |
+| **Retail (TWW)** | 11.2.7 | 110207 |
+| **Retail (TWW)** | 11.1.0 | 110100 |
+| **Classic Cata** | 4.4.2 | 40402 |
+| **Classic Cata** | 4.4.1 | 40401 |
+| **Classic Cata** | 5.0.5 | 50503 |
+| **Classic SoD/Era** | 1.15.8 | 11508 |
+| **Wrath Classic** | 3.4.3 | 30403 |
+
+**Comma-Separated Interface (10.1.0+):**
+- One TOC file can declare compatibility with multiple WoW versions
+- Use when your addon code is identical across versions
+- Eliminates need for separate `_Mainline.toc`, `_Classic.toc` files
+- Example: `## Interface: 120000, 40402, 11508` supports Retail + Cata Classic + Era
+
+**When to use multiple TOC files instead:**
+- Different Lua/XML files need to load per version
+- Version-specific libraries required
+- Major code path differences
+
 ---
 
 ## Major API Changes by Expansion
@@ -182,6 +213,385 @@ local function OnUpdate()
 end
 ```
 
+---
+
+### Secret Values Deep Dive - Unit Health/Power and StatusBars
+
+This section provides comprehensive guidance on handling secret values in the most common use case: displaying unit health and power bars in nameplates, unit frames, and similar addons.
+
+#### Which APIs Return Secret Values?
+
+The following Unit APIs return **secret values during combat** (or when `secretCombatRestrictionsForced` CVar is enabled):
+
+| API Function | Returns | Secret During Combat |
+|--------------|---------|---------------------|
+| `UnitHealth(unit)` | Current health | Yes - SECRET |
+| `UnitHealthMax(unit)` | Maximum health | Yes - SECRET |
+| `UnitPower(unit, powerType)` | Current power | Yes - SECRET |
+| `UnitPowerMax(unit, powerType)` | Maximum power | Yes - SECRET |
+| `UnitGetTotalAbsorbs(unit)` | Total absorb shields | Yes - SECRET |
+| `UnitGetTotalHealAbsorbs(unit)` | Heal absorb amount | Yes - SECRET |
+| `UnitGetIncomingHeals(unit, healer)` | Incoming heals | Yes - SECRET |
+
+**Non-Secret Alternatives (NEW in 12.0.0):**
+
+| API Function | Returns | Notes |
+|--------------|---------|-------|
+| `UnitHealthPercent(unit, usePredicted, curveConstant)` | 0-100 percentage | **NOT SECRET** - Usable for arithmetic! |
+| `UnitPowerPercent(unit, powerType, curveConstant)` | 0-100 percentage | **NOT SECRET** - Usable for arithmetic! |
+| `UnitHealthMissing(unit)` | Missing health amount | May be secret |
+| `UnitPowerMissing(unit, powerType)` | Missing power amount | May be secret |
+
+#### What You CANNOT Do With Secret Values
+
+Secret values will cause **Lua errors** if you attempt:
+
+```lua
+-- ARITHMETIC - ALL FAIL WITH SECRET VALUES:
+local percent = health / maxHealth           -- ERROR: attempt to perform arithmetic on a secret value
+local missing = maxHealth - health           -- ERROR: attempt to perform arithmetic on a secret value
+local width = health * barWidth / maxHealth  -- ERROR: attempt to perform arithmetic on a secret value
+
+-- COMPARISONS - ALL FAIL WITH SECRET VALUES:
+if health > 0 then                           -- ERROR: attempt to compare (a secret value)
+if health == maxHealth then                  -- ERROR: attempt to compare (a secret value)
+if health < threshold then                   -- ERROR: attempt to compare (a secret value)
+
+-- STRING CONCATENATION - FAILS WITH SECRET VALUES:
+local text = "Health: " .. health            -- ERROR: attempt to concatenate a secret value
+print("HP: " .. health)                      -- ERROR: attempt to concatenate a secret value
+
+-- STORING FOR LATER USE - The value is still secret:
+local cachedHealth = health
+if cachedHealth > 100 then                   -- ERROR: still a secret value!
+```
+
+#### What You CAN Do With Secret Values
+
+Secret values CAN be passed directly to certain Blizzard UI widgets that have native C++ support for handling them:
+
+```lua
+-- NATIVE StatusBar FRAMES ACCEPT SECRET VALUES:
+local healthBar = CreateFrame("StatusBar", nil, parent)
+healthBar:SetMinMaxValues(0, UnitHealthMax(unit))  -- Works! Handled at C++ level
+healthBar:SetValue(UnitHealth(unit))               -- Works! Handled at C++ level
+
+-- FONTSTRINGS CAN DISPLAY SECRET VALUES (but you can't read them back):
+local healthText = healthBar:CreateFontString(nil, "OVERLAY")
+-- Use special formatting that handles secrets:
+healthText:SetFormattedText("%d", UnitHealth(unit))  -- May work with special handling
+```
+
+#### StatusBar Widgets and Secret Values - The Key Insight
+
+**Native StatusBar frames** (created with `CreateFrame("StatusBar")`) are specially designed to accept secret values:
+
+```lua
+-- This pattern WORKS with secret values:
+local function UpdateHealthBar(unit)
+    local health = UnitHealth(unit)      -- May be secret
+    local maxHealth = UnitHealthMax(unit) -- May be secret
+
+    -- Native StatusBar handles secrets internally at C++ level
+    healthBar:SetMinMaxValues(0, maxHealth)
+    healthBar:SetValue(health)
+    -- The bar will display correctly even with secret values!
+end
+```
+
+**Custom texture-based bars CANNOT use secret values:**
+
+```lua
+-- THIS PATTERN FAILS with secret values:
+local function UpdateTextureHealthBar(unit)
+    local health = UnitHealth(unit)       -- May be secret
+    local maxHealth = UnitHealthMax(unit) -- May be secret
+
+    -- FAILS: Cannot do arithmetic with secrets!
+    local percent = health / maxHealth    -- ERROR!
+    local width = percent * BAR_WIDTH     -- ERROR!
+
+    healthTexture:SetWidth(width)         -- Never reached
+end
+```
+
+#### The UnitHealthPercent/UnitPowerPercent Solution
+
+For addons that use **custom texture-based status bars** (like nameplate addons), Blizzard provides non-secret percentage APIs:
+
+```lua
+-- UnitHealthPercent returns a REGULAR NUMBER (0-100), not a secret value!
+-- Parameters:
+--   unit: The unit token
+--   usePredicted: boolean - Include predicted healing/absorbs (optional)
+--   curveConstant: CurveConstants.ScaleTo100 to get 0-100 range (optional)
+
+local function UpdateTextureHealthBar(unit)
+    -- Get non-secret percentage (0-100 scale)
+    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
+
+    -- Now we can do arithmetic!
+    local width = (healthPercent / 100) * BAR_WIDTH
+
+    healthTexture:SetWidth(width)
+    healthTexture:Show()
+end
+
+-- Similarly for power bars:
+local function UpdateTexturePowerBar(unit, powerType)
+    local powerPercent = UnitPowerPercent(unit, powerType, CurveConstants.ScaleTo100)
+    local width = (powerPercent / 100) * BAR_WIDTH
+
+    powerTexture:SetWidth(width)
+end
+```
+
+**CurveConstants Reference:**
+```lua
+-- Available curve constants for scaling:
+CurveConstants.ScaleTo100  -- Scales result to 0-100 range
+CurveConstants.ScaleTo1    -- Scales result to 0-1 range (may exist)
+```
+
+#### Complete Example: Custom Nameplate Health Bar
+
+Here's a complete working example for a custom nameplate addon with texture-based health bars:
+
+```lua
+-- Configuration
+local BAR_WIDTH = 100
+local BAR_HEIGHT = 10
+
+-- Create the health bar using textures (NOT StatusBar frame)
+local function CreateCustomHealthBar(parent)
+    local bar = {}
+
+    -- Background
+    bar.background = parent:CreateTexture(nil, "BACKGROUND")
+    bar.background:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+    bar.background:SetSize(BAR_WIDTH, BAR_HEIGHT)
+    bar.background:SetPoint("CENTER")
+
+    -- Health fill texture
+    bar.fill = parent:CreateTexture(nil, "ARTWORK")
+    bar.fill:SetColorTexture(0, 1, 0, 1)
+    bar.fill:SetHeight(BAR_HEIGHT)
+    bar.fill:SetPoint("LEFT", bar.background, "LEFT")
+
+    -- Update function using UnitHealthPercent
+    function bar:Update(unit)
+        if not UnitExists(unit) then
+            self.fill:Hide()
+            return
+        end
+
+        -- Use UnitHealthPercent - returns NON-SECRET percentage!
+        local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100) or 0
+
+        -- Safe to do arithmetic with percentage
+        local width = math.max(1, (healthPercent / 100) * BAR_WIDTH)
+
+        self.fill:SetWidth(width)
+        self.fill:Show()
+
+        -- Color based on health (this comparison is safe with percentage)
+        if healthPercent < 25 then
+            self.fill:SetColorTexture(1, 0, 0, 1)  -- Red
+        elseif healthPercent < 50 then
+            self.fill:SetColorTexture(1, 1, 0, 1)  -- Yellow
+        else
+            self.fill:SetColorTexture(0, 1, 0, 1)  -- Green
+        end
+    end
+
+    return bar
+end
+```
+
+#### Health Text Display with Secret Values
+
+For displaying health text, you have several options:
+
+**Option 1: Use UnitHealthPercent for percentage display:**
+```lua
+local function UpdateHealthText(fontString, unit)
+    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
+    if healthPercent then
+        fontString:SetFormattedText("%.0f%%", healthPercent)
+    else
+        fontString:SetText("")
+    end
+end
+```
+
+**Option 2: Use native StatusBar text with secret values:**
+```lua
+-- If using a native StatusBar, you can use its built-in text handling
+local healthBar = CreateFrame("StatusBar", nil, parent)
+
+-- Create text that inherits secret value handling from parent
+local healthText = healthBar:CreateFontString(nil, "OVERLAY")
+healthText:SetPoint("CENTER")
+
+-- The StatusBar can format its value as text
+healthBar.Text = healthText
+-- Note: Exact method depends on your StatusBar implementation
+```
+
+**Option 3: Show health as missing/deficit using percentage:**
+```lua
+local function UpdateHealthDeficit(fontString, unit)
+    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
+    if healthPercent then
+        local deficit = 100 - healthPercent
+        if deficit > 0 then
+            fontString:SetFormattedText("-%.0f%%", deficit)
+        else
+            fontString:SetText("")  -- Full health, no deficit
+        end
+    end
+end
+```
+
+#### CreateUnitHealPredictionCalculator Pattern
+
+For advanced health bar addons that need to show incoming heals, absorb shields, and heal absorbs, WoW 12.0.0 provides a special calculator pattern:
+
+```lua
+-- Create a heal prediction calculator for a unit
+local calculator = CreateUnitHealPredictionCalculator(unit)
+
+-- The calculator returns objects that can be used with StatusBars
+local healthBar = CreateFrame("StatusBar", nil, parent)
+local healPredictionBar = CreateFrame("StatusBar", nil, parent)
+local absorbBar = CreateFrame("StatusBar", nil, parent)
+
+local function UpdateHealthBarsWithPrediction(unit)
+    -- Get prediction data from calculator
+    local healthData = calculator:GetHealthData()
+
+    -- Main health bar - uses secret values natively
+    healthBar:SetMinMaxValues(0, healthData.maxHealth)
+    healthBar:SetValue(healthData.currentHealth)
+
+    -- Incoming heals prediction bar
+    if healthData.incomingHeals and healthData.incomingHeals > 0 then
+        healPredictionBar:SetMinMaxValues(0, healthData.maxHealth)
+        healPredictionBar:SetValue(healthData.currentHealth + healthData.incomingHeals)
+        healPredictionBar:Show()
+    else
+        healPredictionBar:Hide()
+    end
+
+    -- Absorb shield bar
+    if healthData.totalAbsorbs and healthData.totalAbsorbs > 0 then
+        absorbBar:SetMinMaxValues(0, healthData.maxHealth)
+        absorbBar:SetValue(healthData.totalAbsorbs)
+        absorbBar:Show()
+    else
+        absorbBar:Hide()
+    end
+end
+```
+
+**Note:** The exact API for `CreateUnitHealPredictionCalculator` may vary. Check Blizzard's UnitFrame code in the Blizzard UI source for the current implementation pattern.
+
+#### Practical Migration Example: NeatPlates/TidyPlates Style Addon
+
+Here's how a nameplate addon might migrate from pre-12.0.0 to handle secret values:
+
+**BEFORE (11.x - Broken in 12.0.0):**
+```lua
+local function UpdateHealthBar(bar, unit)
+    local health = UnitHealth(unit)
+    local maxHealth = UnitHealthMax(unit)
+
+    -- FAILS in 12.0.0: Cannot do arithmetic with secret values!
+    local percent = health / maxHealth
+    bar.healthBar:SetWidth(percent * bar.width)
+    bar.healthText:SetText(FormatHealth(health, maxHealth))
+end
+```
+
+**AFTER (12.0.0 Compatible):**
+```lua
+local function UpdateHealthBar(bar, unit)
+    -- Use UnitHealthPercent for texture-based bars
+    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100) or 0
+
+    -- Arithmetic is safe with percentage
+    local width = math.max(1, (healthPercent / 100) * bar.width)
+    bar.healthBar:SetWidth(width)
+
+    -- Display percentage instead of absolute values
+    bar.healthText:SetFormattedText("%.0f%%", healthPercent)
+
+    -- Or use a native StatusBar for the actual display
+    -- bar.nativeStatusBar:SetMinMaxValues(0, UnitHealthMax(unit))
+    -- bar.nativeStatusBar:SetValue(UnitHealth(unit))
+end
+```
+
+#### Hybrid Approach: Native StatusBar with Custom Visuals
+
+For the best of both worlds, you can use a native StatusBar for the health logic but overlay custom textures:
+
+```lua
+local function CreateHybridHealthBar(parent)
+    -- Native StatusBar handles secret values
+    local statusBar = CreateFrame("StatusBar", nil, parent)
+    statusBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
+    statusBar:SetStatusBarColor(0, 1, 0, 1)
+    statusBar:SetSize(BAR_WIDTH, BAR_HEIGHT)
+
+    -- The StatusBar automatically handles:
+    -- - Secret health values
+    -- - Smooth interpolation
+    -- - Proper fill calculation
+
+    -- Add custom overlay textures for visual styling
+    local overlay = statusBar:CreateTexture(nil, "OVERLAY")
+    overlay:SetAllPoints()
+    overlay:SetTexture("Interface\\AddOns\\MyAddon\\BarOverlay")
+    overlay:SetBlendMode("ADD")
+
+    -- Update function
+    function statusBar:UpdateHealth(unit)
+        -- These calls work with secret values!
+        self:SetMinMaxValues(0, UnitHealthMax(unit))
+        self:SetValue(UnitHealth(unit))
+    end
+
+    return statusBar
+end
+```
+
+#### Testing Secret Value Handling
+
+Use these CVars to force secret restrictions for testing outside of combat:
+
+```lua
+-- Force secret restrictions (for testing)
+/run SetCVar("secretCombatRestrictionsForced", 1)
+
+-- Disable forced restrictions (return to normal)
+/run SetCVar("secretCombatRestrictionsForced", 0)
+
+-- Enable debug output for secret values
+/run SetCVar("secretRestrictionsDebug", 1)
+```
+
+**Test Checklist:**
+1. Enable `secretCombatRestrictionsForced`
+2. Target a friendly player or NPC
+3. Verify health bars display correctly
+4. Verify no Lua errors in error log
+5. Test health percentage calculations
+6. Test health text formatting
+7. Disable the CVar and verify normal operation
+
+---
+
 #### C_ActionBar Namespace (Replaces Global Action Bar Functions)
 
 ```lua
@@ -271,43 +681,131 @@ frame:SetScript("OnEvent", function()
 end)
 ```
 
-#### C_DamageMeter Namespace - OFFICIAL DAMAGE METER API!
+#### ⚠️ CRITICAL: Combat Log Events BLOCKED in 12.0.0 ⚠️
 
-This is a game-changer. Blizzard now provides official APIs for damage meter functionality:
+**This is the most important change in 12.0.0 for damage meter and combat addon developers.**
 
+In WoW 12.0.0 (Midnight), Blizzard has **completely blocked third-party addon access to combat log events** as part of their "addon disarmament" initiative. This is NOT a bug - it is intentional.
+
+**What Blizzard Officially Stated:**
+> "Combat Log Events are no longer available to addons, and messages in the Combat Log chat tab have been converted to KStrings to prevent addons from parsing the information inside them."
+
+**What This Means:**
 ```lua
--- Get encounter damage/healing data
-C_DamageMeter.GetEncounterInfo()
-C_DamageMeter.GetCombatantInfo(combatantGUID)
-C_DamageMeter.GetCombatantDamage(combatantGUID)
-C_DamageMeter.GetCombatantHealing(combatantGUID)
-C_DamageMeter.GetCombatantDamageTaken(combatantGUID)
+-- THIS CODE WILL THROW ADDON_ACTION_FORBIDDEN IN 12.0.0:
+local frame = CreateFrame("Frame")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")  -- BLOCKED!
 
--- Get breakdown by ability
-C_DamageMeter.GetAbilityDamage(combatantGUID, abilityID)
-C_DamageMeter.GetAbilityHealing(combatantGUID, abilityID)
+-- Error message you will see:
+-- [ADDON_ACTION_FORBIDDEN] AddOn 'YourAddon' tried to call the protected function 'Frame:RegisterEvent()'.
 
--- Get rankings
-C_DamageMeter.GetDamageRankings()
-C_DamageMeter.GetHealingRankings()
-C_DamageMeter.GetDamageTakenRankings()
-
--- Encounter timeline
-C_DamageMeter.GetEncounterTimeline()
-C_DamageMeter.GetTimelineEvent(index)
-
--- Control
-C_DamageMeter.StartTracking()
-C_DamageMeter.StopTracking()
-C_DamageMeter.ResetData()
-C_DamageMeter.IsTracking()
+-- Alternative registration methods are ALSO blocked:
+EventRegistry:RegisterFrameEventAndCallback("COMBAT_LOG_EVENT_UNFILTERED", ...)  -- BLOCKED!
+RegisterEventCallback("COMBAT_LOG_EVENT_UNFILTERED", ...)  -- BLOCKED!
 ```
 
-**Why This Matters:**
-- Official API means consistent data across all meters
-- No more combat log parsing for basic meters
-- Works correctly with secret values system
-- May become required as combat log access becomes more restricted
+**The restrictions:**
+- Apply **always** for event registration (not just during combat)
+- Registration is blocked even at addon load time
+- Using `pcall()` does NOT prevent the ADDON_ACTION_FORBIDDEN error from being raised
+- Other addons loading your addon via `LoadAddOn()` can cause taint issues
+
+**What Still Works:**
+1. **Blizzard's built-in damage meter** - Now part of the base UI
+2. **C_DamageMeter API** - Official API for aggregated damage/healing data (see below)
+3. **Non-combat events** - Other events still work normally
+
+**Migration Path for Damage Meters:**
+Traditional damage meters that parse `COMBAT_LOG_EVENT_UNFILTERED` **cannot function in 12.0.0**. You have two options:
+
+1. **Use C_DamageMeter API** (recommended) - Provides aggregated damage/healing data through official channels
+2. **Discontinue combat log parsing** - Accept that raw combat log access is no longer available to addons
+
+**Why Blizzard Made This Change:**
+> "When addons could analyze combat information in real-time, they could process combat information to make decisions for players, meaning players no longer need to make these decisions themselves."
+
+This is part of Blizzard's effort to prevent addons from "solving" encounter mechanics automatically.
+
+**References:**
+- [Combat Addon Restrictions Eased in Midnight - Icy Veins](https://www.icy-veins.com/wow/news/combat-addon-restrictions-eased-in-midnight/)
+- [Patch 12.0.0/Planned API changes - Warcraft Wiki](https://warcraft.wiki.gg/wiki/Patch_12.0.0/Planned_API_changes)
+
+#### C_DamageMeter Namespace - ⛔ SECRET-PROTECTED (UNUSABLE BY ADDONS)
+
+> **⚠️ CRITICAL DISCOVERY (Verified January 2026):**
+> While C_DamageMeter API exists and appears functional, **the actual data returned is protected as "secret values"** and cannot be used by third-party addons. This API appears to be designed ONLY for Blizzard's built-in damage meter UI.
+
+**What Happens When You Try to Use It:**
+```lua
+-- The API returns data, but key values are SECRET:
+local sessionData = C_DamageMeter.GetCombatSessionFromType(sessionType, meterType)
+for _, source in ipairs(sessionData.combatSources) do
+    -- These are ACCESSIBLE (cosmetic only):
+    print(source.classFilename)  -- Works: "DEATHKNIGHT"
+    print(source.isLocalPlayer)  -- Works: true
+    print(source.specIconID)     -- Works: 135770
+
+    -- These are SECRET (unusable):
+    print(source.name)           -- ERROR: "attempt to compare (a secret value)"
+    print(source.totalAmount)    -- SECRET - no value accessible
+    print(source.amountPerSecond)-- SECRET - no value accessible
+    print(source.sourceGUID)     -- SECRET - no value accessible
+end
+```
+
+**Error You'll See:**
+```
+attempt to compare local 'name' (a secret value)
+```
+
+**The Reality:**
+| Field | Status | Notes |
+|-------|--------|-------|
+| `name` | 🔒 SECRET | Player names hidden |
+| `totalAmount` | 🔒 SECRET | Damage/healing totals hidden |
+| `amountPerSecond` | 🔒 SECRET | DPS/HPS hidden |
+| `sourceGUID` | 🔒 SECRET | Player GUIDs hidden |
+| `classFilename` | ✅ Accessible | Cosmetic only |
+| `isLocalPlayer` | ✅ Accessible | Cosmetic only |
+| `specIconID` | ✅ Accessible | Cosmetic only |
+
+**Bottom Line:**
+- **Third-party damage meters CANNOT function in WoW 12.0.0+**
+- Combat log is blocked AND C_DamageMeter data is secret-protected
+- Players must use Blizzard's built-in damage meter (Shift+P or Encounter Journal)
+- This is intentional as part of Blizzard's "addon disarmament" initiative
+
+**API Reference (for documentation purposes only):**
+```lua
+-- Check availability (this works, returns true, but data is still secret!)
+C_DamageMeter.IsDamageMeterAvailable()
+  -- Returns: isAvailable (bool), failureReason (string)
+
+-- Get session data - DATA IS SECRET
+C_DamageMeter.GetCombatSessionFromType(sessionType, meterType)
+C_DamageMeter.GetCombatSessionFromID(sessionID, meterType)
+
+-- Get spell breakdown - DATA IS SECRET
+C_DamageMeter.GetCombatSessionSourceFromType(sessionType, meterType, sourceGUID)
+
+-- Reset (this may work)
+C_DamageMeter.ResetAllCombatSessions()
+
+-- Enums exist but data they access is secret:
+-- Enum.DamageMeterSessionType = { Overall, CurrentFight, LastFight }
+-- Enum.DamageMeterType = { DamageDone, HealingDone, DamageTaken }
+
+-- Events fire but contain no usable data:
+-- DAMAGE_METER_COMBAT_SESSION_UPDATED
+-- DAMAGE_METER_CURRENT_SESSION_UPDATED
+-- DAMAGE_METER_RESET
+```
+
+**If You're Maintaining a Damage Meter Addon:**
+1. Display a message explaining the limitation to users
+2. Suggest using Blizzard's built-in meter
+3. Consider discontinuing 12.0.0+ support
+4. Monitor for potential future changes from Blizzard
 
 #### C_EncounterTimeline and C_EncounterWarnings
 
@@ -403,6 +901,347 @@ C_DeathRecap.GetDeathRecapInfo(recapID)
 C_DeathRecap.GetNumDeathRecaps()
 ```
 
+#### GetMouseFocus() Removed - Use GetMouseFoci()
+
+The `GetMouseFocus()` function was removed in 12.0.0. Use `GetMouseFoci()` which returns a table of frames under the cursor.
+
+**Compatibility Wrapper:**
+```lua
+-- Works on both pre-12.0.0 and 12.0.0+
+local GetMouseFocus = GetMouseFocus or function()
+    local mouseFoci = GetMouseFoci and GetMouseFoci()
+    return mouseFoci and mouseFoci[1] or nil
+end
+```
+
+**Why It Changed:**
+The new `GetMouseFoci()` returns ALL frames under the cursor (useful for overlapping frames), while the old API only returned one. The wrapper above returns just the first frame for backward compatibility.
+
+#### Menu System Migration (UIDropDownMenu to MenuUtil)
+
+The legacy `UIDropDownMenu` system was deprecated in 11.0.0 and the new Menu system became standard. While basic usage is documented elsewhere, here are **critical lessons learned from real-world library migrations**:
+
+##### 1. MenuUtil.CreateContextMenu() Positioning
+
+`MenuUtil.CreateContextMenu()` **always anchors to the cursor position**. You cannot change this behavior - it's hardcoded to use `MenuConstants.VerticalLinearDirection` at the cursor.
+
+**For custom positioning, use the lower-level Menu API directly:**
+```lua
+-- Create menu description
+local menuDescription = MenuUtil.CreateContextMenuDescription()
+menuDescription:CreateButton("Option 1", function() print("Selected 1") end)
+menuDescription:CreateButton("Option 2", function() print("Selected 2") end)
+
+-- Create custom anchor (TOPRIGHT of menu at BOTTOMRIGHT of parent)
+local anchor = CreateAnchor("TOPRIGHT", parentFrame, "BOTTOMRIGHT", 0, 0)
+
+-- Open menu with custom positioning
+local menu = Menu.GetManager():OpenMenu(parentFrame, menuDescription, anchor)
+```
+
+**Anchor Parameters:**
+- `CreateAnchor(menuPoint, relativeFrame, relativePoint, offsetX, offsetY)`
+- `menuPoint` - Where on the menu to anchor (e.g., "TOPRIGHT", "TOPLEFT")
+- `relativeFrame` - Frame to anchor to
+- `relativePoint` - Point on that frame to anchor to
+- `offsetX`, `offsetY` - Pixel offsets
+
+##### 2. MenuUtil Buttons Are NOT Secure
+
+**Critical: Menu buttons created via MenuUtil CANNOT cast spells, use items, or use toys directly.** They are NOT `SecureActionButtonTemplate` frames.
+
+**The Problem:**
+```lua
+-- THIS DOES NOT WORK for casting:
+menuDescription:CreateButton("Cast Hearthstone", function()
+    -- SecureActionButton attributes have no effect here
+    -- You cannot cast spells from this callback
+end)
+```
+
+**The Solution - Overlay a SecureActionButton:**
+```lua
+-- Create a secure overlay button
+local secureButton = CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+secureButton:SetAttribute("type", "spell")
+secureButton:SetAttribute("spell", "Hearthstone")
+
+-- Position it over the menu item using AddInitializer
+menuDescription:CreateButton("Cast Hearthstone")
+    :AddInitializer(function(button, elementDescription, menu)
+        -- Position secure button over this menu button
+        secureButton:SetAllPoints(button)
+        secureButton:SetFrameStrata("DIALOG")
+        secureButton:SetFrameLevel(button:GetFrameLevel() + 10)
+        secureButton:Show()
+
+        -- Make secure button visually transparent (menu button provides visuals)
+        secureButton:SetAlpha(0)
+        secureButton:EnableMouse(true)
+    end)
+```
+
+**Attribute Types for Secure Buttons:**
+```lua
+-- For spells:
+secureButton:SetAttribute("type", "spell")
+secureButton:SetAttribute("spell", "Spell Name or ID")
+
+-- For items:
+secureButton:SetAttribute("type", "item")
+secureButton:SetAttribute("item", "item:12345")  -- Item link format
+
+-- For toys:
+secureButton:SetAttribute("type", "toy")
+secureButton:SetAttribute("toy", 12345)  -- Toy item ID
+
+-- For macros:
+secureButton:SetAttribute("type", "macro")
+secureButton:SetAttribute("macrotext", "/cast Hearthstone")
+```
+
+##### 3. SetTooltip() Overwrites SetOnEnter()
+
+When using both tooltips and custom OnEnter handlers on menu elements, **order matters**:
+
+**Problem - OnEnter handler gets replaced:**
+```lua
+local button = menuDescription:CreateButton("My Button")
+button:SetOnEnter(function(button)
+    -- Custom enter behavior
+    PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+end)
+button:SetTooltip(function(tooltip)
+    tooltip:AddLine("Tooltip text")
+end)
+-- Result: OnEnter is GONE, only tooltip shows
+```
+
+**Solution - Call SetTooltip FIRST, then use HookOnEnter:**
+```lua
+local button = menuDescription:CreateButton("My Button")
+
+-- 1. Set tooltip FIRST
+button:SetTooltip(function(tooltip)
+    tooltip:AddLine("Tooltip text")
+end)
+
+-- 2. THEN hook the enter handler (adds to existing, doesn't replace)
+button:HookOnEnter(function(button)
+    -- Your custom behavior runs IN ADDITION to tooltip
+    PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+end)
+```
+
+##### 4. Menu AddInitializer OnEnter/OnLeave Scripts
+
+The Menu system **overwrites button scripts AFTER initializers run**. Setting scripts directly in AddInitializer does not work.
+
+**Problem - Scripts get overwritten:**
+```lua
+menuDescription:CreateButton("My Button")
+    :AddInitializer(function(button, elementDescription, menu)
+        -- THIS DOES NOT WORK - gets overwritten after initializer returns
+        button:SetScript("OnEnter", function(self)
+            print("Enter!")  -- Never fires
+        end)
+    end)
+```
+
+**Solution - Use HookOnEnter/HookOnLeave on the element description:**
+```lua
+local buttonDesc = menuDescription:CreateButton("My Button")
+
+-- Hook on the description object, not the button
+buttonDesc:HookOnEnter(function(button)
+    print("Enter!")  -- This WILL fire
+end)
+
+buttonDesc:HookOnLeave(function(button)
+    print("Leave!")  -- This WILL fire
+end)
+
+-- AddInitializer is still useful for other setup
+buttonDesc:AddInitializer(function(button, elementDescription, menu)
+    -- Set up button appearance, text, icons, etc.
+    button.customData = "some value"
+end)
+```
+
+##### 5. Font Sizing in Menus
+
+Menu button font strings are **compositor font strings** managed by the Menu system. Calling `SetFont()` directly on them is **disallowed** and will fail silently or throw an error.
+
+**Problem - SetFont() fails:**
+```lua
+menuDescription:CreateButton("My Button")
+    :AddInitializer(function(button, elementDescription, menu)
+        -- ❌ THIS DOES NOT WORK - compositor font strings cannot use SetFont()
+        button.fontString:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    end)
+```
+
+**Solution - Create a custom Font object and use SetFontObject():**
+```lua
+-- Create a Font object (do this ONCE, not per-button)
+local MyMenuFont = CreateFont("MyAddon_MenuFont")
+MyMenuFont:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+
+-- Apply the font object to menu buttons
+menuDescription:CreateButton("My Button")
+    :AddInitializer(function(button, elementDescription, menu)
+        -- ✅ THIS WORKS - SetFontObject is allowed
+        button.fontString:SetFontObject(MyMenuFont)
+    end)
+```
+
+##### 6. Row Height Scaling for Custom Fonts
+
+When using a larger font size in menus, the default button height may be too small, causing **text overlap** between menu items.
+
+**Problem - Text overlaps:**
+```lua
+-- Using a 16pt font with default ~20px button height = overlap
+local LargeFont = CreateFont("MyAddon_LargeFont")
+LargeFont:SetFont("Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
+
+menuDescription:CreateButton("Line 1"):AddInitializer(function(btn)
+    btn.fontString:SetFontObject(LargeFont)
+end)
+menuDescription:CreateButton("Line 2"):AddInitializer(function(btn)
+    btn.fontString:SetFontObject(LargeFont)  -- May overlap with Line 1!
+end)
+```
+
+**Solution - Set button height to match font size:**
+```lua
+-- Rule of thumb: button height = fontSize + 6 (for padding)
+local fontSize = 14
+local buttonHeight = fontSize + 6  -- 20px
+
+local MenuFont = CreateFont("MyAddon_MenuFont")
+MenuFont:SetFont("Fonts\\FRIZQT__.TTF", fontSize, "OUTLINE")
+
+menuDescription:CreateButton("My Button")
+    :AddInitializer(function(button, elementDescription, menu)
+        button.fontString:SetFontObject(MenuFont)
+        button:SetHeight(buttonHeight)  -- Prevent text overlap
+    end)
+```
+
+**Complete Font Customization Pattern:**
+```lua
+-- Configuration
+local MENU_FONT_SIZE = 13
+local MENU_BUTTON_HEIGHT = MENU_FONT_SIZE + 6
+
+-- Create font object once at addon load
+local MyMenuFont = CreateFont("MyAddon_MenuFont")
+MyMenuFont:SetFont("Fonts\\FRIZQT__.TTF", MENU_FONT_SIZE, "OUTLINE")
+
+-- Helper function for styled buttons
+local function CreateStyledButton(menuDesc, text, onClick)
+    local button = menuDesc:CreateButton(text, onClick)
+    button:AddInitializer(function(btn)
+        btn.fontString:SetFontObject(MyMenuFont)
+        btn:SetHeight(MENU_BUTTON_HEIGHT)
+    end)
+    return button
+end
+
+-- Usage
+CreateStyledButton(menuDescription, "Option 1", function() print("1") end)
+CreateStyledButton(menuDescription, "Option 2", function() print("2") end)
+```
+
+##### 7. Secure Overlay Flickering Prevention
+
+When overlaying a secure button on a menu item, mouse movement between the menu button and the overlay can cause flickering (hide/show loops).
+
+**Problem - Flickering when mouse moves between frames:**
+```lua
+-- Menu button's OnLeave hides the overlay
+-- But mouse is now over overlay, which triggers menu button's OnLeave again
+-- Result: Rapid flickering
+```
+
+**Solution - Check GetMouseFocus() in OnLeave:**
+```lua
+-- GetMouseFocus compatibility wrapper (see GetMouseFocus section above)
+local GetMouseFocus = GetMouseFocus or function()
+    local mouseFoci = GetMouseFoci and GetMouseFoci()
+    return mouseFoci and mouseFoci[1] or nil
+end
+
+local secureOverlay = CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+
+buttonDesc:HookOnLeave(function(button)
+    -- Only hide overlay if mouse isn't over the overlay itself
+    local focus = GetMouseFocus()
+    if focus ~= secureOverlay then
+        secureOverlay:Hide()
+    end
+end)
+
+-- Also handle overlay's own OnLeave
+secureOverlay:SetScript("OnLeave", function(self)
+    local focus = GetMouseFocus()
+    -- Check if mouse moved to the underlying menu button
+    if focus ~= currentMenuButton then
+        self:Hide()
+    end
+end)
+```
+
+**Complete Pattern for Secure Menu Overlays:**
+```lua
+local function CreateSecureMenuButton(menuDesc, text, actionType, actionValue)
+    local secureBtn = CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
+    secureBtn:SetAttribute("type", actionType)
+    secureBtn:SetAttribute(actionType, actionValue)
+    secureBtn:Hide()
+
+    local currentButton = nil
+
+    local buttonDesc = menuDesc:CreateButton(text)
+
+    buttonDesc:AddInitializer(function(button, elementDesc, menu)
+        currentButton = button
+        secureBtn:SetParent(button)
+        secureBtn:SetAllPoints(button)
+        secureBtn:SetFrameStrata("DIALOG")
+        secureBtn:SetFrameLevel(button:GetFrameLevel() + 10)
+        secureBtn:SetAlpha(0)
+        secureBtn:EnableMouse(true)
+        secureBtn:Show()
+    end)
+
+    buttonDesc:HookOnLeave(function(button)
+        local focus = GetMouseFocus()
+        if focus ~= secureBtn then
+            secureBtn:Hide()
+        end
+    end)
+
+    secureBtn:SetScript("OnLeave", function(self)
+        local focus = GetMouseFocus()
+        if focus ~= currentButton then
+            self:Hide()
+        end
+    end)
+
+    return buttonDesc, secureBtn
+end
+
+-- Usage:
+local spellBtn, secureSpell = CreateSecureMenuButton(
+    menuDescription,
+    "Cast Hearthstone",
+    "spell",
+    "Hearthstone"
+)
+```
+
 #### Major Removals in 12.0.0
 
 **Action Bar Globals (Use C_ActionBar):**
@@ -446,7 +1285,7 @@ local inProgress = C_InstanceEncounter.IsEncounterInProgress()
 C_InstanceEncounter.GetCurrentEncounterInfo()
 ```
 
-#### Patch 12.0.1 (TOC 120001)
+#### Patch 12.0.0 (TOC 120000)
 
 Minor refinements to 12.0.0 systems:
 
@@ -1744,67 +2583,95 @@ end
 
 **Result:** Addon works on both 11.x and 12.0+, handles secret values gracefully
 
-### Example 5: Damage Meter Addon (11.x -> 12.0.0)
+### Example 5: Damage Meter Addon (11.x -> 12.0.0) - ⛔ NO LONGER POSSIBLE
 
-**Major Change:** Consider using the new official C_DamageMeter API instead of parsing combat log.
+> **⚠️ VERIFIED JANUARY 2026:** Third-party damage meters **CANNOT function in WoW 12.0.0+**. Both paths are blocked:
+> 1. Combat log events throw `ADDON_ACTION_FORBIDDEN`
+> 2. C_DamageMeter API data is protected as "secret values"
 
-**Before (11.x - Combat Log Parsing):**
+**Before (11.x - Combat Log Parsing) - BLOCKED:**
 ```lua
+-- ❌ THIS CODE THROWS ADDON_ACTION_FORBIDDEN IN 12.0.0:
 local damageData = {}
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")  -- ADDON_ACTION_FORBIDDEN!
 frame:SetScript("OnEvent", function()
-    local _, event, _, sourceGUID, sourceName, _, _, destGUID, destName,
-          _, _, spellID, spellName, _, amount = CombatLogGetCurrentEventInfo()
-
-    if event == "SPELL_DAMAGE" or event == "SWING_DAMAGE" then
-        damageData[sourceGUID] = (damageData[sourceGUID] or 0) + (amount or 0)
-    end
+    -- This handler will NEVER fire - registration itself fails
 end)
 ```
 
-**After (12.0.0+ - Official API):**
+**Attempted Workaround (C_DamageMeter API) - ALSO BLOCKED:**
 ```lua
--- Option 1: Use official C_DamageMeter API (recommended for basic meters)
-local function UpdateDamageDisplay()
-    local rankings = C_DamageMeter.GetDamageRankings()
-    for i, entry in ipairs(rankings) do
-        local damage = C_DamageMeter.GetCombatantDamage(entry.combatantGUID)
-        UpdateMeterBar(i, entry.name, damage)
+-- ❌ THIS CODE FAILS WITH "secret value" ERRORS:
+local function TryToGetData()
+    local available = C_DamageMeter.IsDamageMeterAvailable()  -- Returns true!
+
+    if available then
+        local sessionData = C_DamageMeter.GetCombatSessionFromType(
+            Enum.DamageMeterSessionType.Overall,
+            Enum.DamageMeterType.DamageDone
+        )
+
+        for _, source in ipairs(sessionData.combatSources) do
+            -- These work (cosmetic only):
+            print(source.classFilename)  -- "WARRIOR"
+            print(source.isLocalPlayer)  -- true
+
+            -- These FAIL with "attempt to compare (a secret value)":
+            if source.name == "SomePlayer" then  -- ERROR!
+                -- Cannot compare secret values
+            end
+            local damage = source.totalAmount  -- SECRET, unusable
+            local dps = source.amountPerSecond -- SECRET, unusable
+        end
+    end
+end
+```
+
+**The Only Valid "Migration" - Show Users a Message:**
+```lua
+-- ✅ The only thing damage meter addons can do in 12.0.0+:
+local function OnAddonLoaded(self, event, addonName)
+    if addonName == "YourDamageMeter" then
+        -- Check WoW version
+        local _, _, _, tocVersion = GetBuildInfo()
+        if tocVersion >= 120000 then
+            -- 12.0.0+ - damage meters cannot function
+            print("|cFFFF6600[YourDamageMeter]|r WoW 12.0.0 has blocked damage meter functionality.")
+            print("|cFFFF6600[YourDamageMeter]|r Please use Blizzard's built-in meter (Shift+P or Encounter Journal).")
+
+            -- Optionally disable the addon's UI
+            if YourDamageMeter.MainFrame then
+                YourDamageMeter.MainFrame:Hide()
+            end
+        end
     end
 end
 
--- Start tracking
-C_DamageMeter.StartTracking()
-
--- Register for encounter events
 local frame = CreateFrame("Frame")
-frame:RegisterEvent("ENCOUNTER_START")
-frame:RegisterEvent("ENCOUNTER_END")
-frame:SetScript("OnEvent", function(self, event)
-    if event == "ENCOUNTER_START" then
-        C_DamageMeter.ResetData()
-    elseif event == "ENCOUNTER_END" then
-        UpdateDamageDisplay()
-    end
-end)
-
--- Option 2: Still use combat log (for advanced meters needing full data)
-local frame = CreateFrame("Frame")
-frame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
-frame:SetScript("OnEvent", function()
-    -- Use new namespace
-    local _, event, _, sourceGUID, sourceName, _, _, destGUID, destName,
-          _, _, spellID, spellName, _, amount = C_CombatLog.GetCurrentEventInfo()
-    -- Process as before
-end)
+frame:RegisterEvent("ADDON_LOADED")
+frame:SetScript("OnEvent", OnAddonLoaded)
 ```
 
-**Benefits of Official API:**
-- No combat log parsing overhead
-- Consistent data across all meters
-- Works correctly with secret values
-- May be required as Blizzard restricts combat log access further
+**What This Means for Existing Damage Meters:**
+- **Recount, Skada, Details!** and similar addons **cannot be fixed** for 12.0.0+
+- There is NO migration path - both combat log AND C_DamageMeter are blocked
+- Players must use Blizzard's built-in damage meter
+- Addon authors should display clear messages explaining this to users
+
+**Why C_DamageMeter Doesn't Work (Verified):**
+
+| Field | Status | What You Get |
+|-------|--------|--------------|
+| `name` | 🔒 SECRET | `<no value>` - comparison throws error |
+| `totalAmount` | 🔒 SECRET | `<no value>` - unusable |
+| `amountPerSecond` | 🔒 SECRET | `<no value>` - unusable |
+| `sourceGUID` | 🔒 SECRET | `<no value>` - unusable |
+| `classFilename` | ✅ Accessible | Works, but useless without names/amounts |
+| `isLocalPlayer` | ✅ Accessible | Works, but useless without damage data |
+
+**Blizzard's Intent:**
+This is intentional. C_DamageMeter exists for Blizzard's OWN built-in UI, not for third-party addons. The "addon disarmament" in 12.0.0 was designed to prevent third-party combat analysis addons from functioning.
 
 ---
 
@@ -1840,6 +2707,7 @@ end)
 
 | Old API | New API | Version | Notes |
 |---------|---------|---------|-------|
+| `GetMouseFocus()` | `GetMouseFoci()[1]` | 12.0.0 | Returns table; use compat wrapper |
 | `GetActionInfo(slot)` | `C_ActionBar.GetActionInfo(slot)` | 12.0.0 | Secret values in combat |
 | `GetActionTexture(slot)` | `C_ActionBar.GetActionTexture(slot)` | 12.0.0 | Namespace move |
 | `GetActionCooldown(slot)` | `C_ActionBar.GetActionCooldown(slot)` | 12.0.0 | Namespace move |
@@ -1946,8 +2814,8 @@ You can keep your addons working across expansions with minimal effort.
 
 ---
 
-**Version:** 2.0 - Updated for WoW 12.0.0 (Midnight)
-**Last Updated:** 2026-01-20
+**Version:** 2.3 - Added comprehensive Secret Values Deep Dive for Unit Health/Power and StatusBars
+**Last Updated:** 2026-01-23
 **Coverage:** API changes from WoW 9.0 through 12.0.0
 
 <!-- CLAUDE_SKIP_END -->

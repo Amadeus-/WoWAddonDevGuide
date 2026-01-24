@@ -67,20 +67,67 @@ UI.xml
 Specifies which game version the addon is compatible with.
 ```
 ## Interface: 120000        # Version 12.0.0 (Midnight)
-## Interface: 120001        # Version 12.0.1
+## Interface: 120000        # Version 12.0.0
 ## Interface: 0             # Works with any version (Blizzard addons only)
 ```
 **Format:** XXYYZZ where XX=expansion, YY=major, ZZ=minor
 - Example: 120000 = 12.00.00 (Midnight 12.0.0)
 - Example: 110207 = 11.02.07 (The War Within 11.2.7)
 
-**Recent interface versions:**
-- 120000 = 12.0.0 (Midnight)
-- 110207 = 11.2.7 (The War Within)
-- 110200 = 11.2.0 (The War Within)
-- 110100 = 11.1.0 (The War Within)
-- 110005 = 11.0.5 (The War Within)
-- 110002 = 11.0.2 (The War Within launch)
+#### Comma-Separated Interface Versions (10.1.0+)
+
+Since Patch 10.1.0 (May 2023), TOC files support **comma-separated Interface versions**. This allows a single TOC file to declare compatibility with multiple WoW versions:
+
+```
+## Interface: 120000, 110207, 50503, 40402, 11508
+```
+
+**When to use comma-separated versions (single TOC file):**
+- Your addon code is **identical** across all WoW versions (Retail, Classic, etc.)
+- You don't need to load different files for different game clients
+- Simpler maintenance with one TOC file
+
+**When to use multiple TOC files:**
+- You need to load **different files** for different game versions
+- Retail version needs different features than Classic version
+- You have version-specific optimizations or code paths
+
+**Example - Single TOC with Multiple Versions:**
+```
+## Interface: 120000, 110207, 50503, 40402, 11508
+## Title: My Universal Addon
+## Version: 1.0.0
+
+# Same files load on all versions
+Core.lua
+Utils.lua
+```
+
+**Example - Multiple TOC Files (when needed):**
+```
+MyAddon/
+    MyAddon_Mainline.toc    # ## Interface: 120000
+    MyAddon_Cata.toc        # ## Interface: 40402
+    MyAddon_Vanilla.toc     # ## Interface: 11508
+    Core.lua                # Shared
+    Retail/Features.lua     # Only in Mainline TOC
+    Classic/Features.lua    # Only in Classic TOCs
+```
+
+**Current Interface Versions Reference:**
+
+| Game Version | Interface Number | Notes |
+|-------------|------------------|-------|
+| Retail 12.0.0 (Midnight) | 120000 | Current expansion |
+| Retail 12.0.1 | 120001 | Future patches |
+| TWW 11.2.7 | 110207 | Previous expansion |
+| Classic Cata 4.4.2 | 40402 | Cataclysm Classic |
+| Classic SoD/Era 1.15.8 | 11508 | Season of Discovery / Classic Era |
+| Wrath Classic 3.4.3 | 30403 | WotLK Classic |
+| TBC Classic 2.5.4 | 20504 | Burning Crusade Classic |
+
+**Best Practice Recommendation:**
+For most addons, use **comma-separated versions** in a single TOC file unless you specifically need different file loading per version. This simplifies maintenance and ensures consistent behavior across clients.
 
 #### `## Title: <name>`
 Display name shown in the addon list.
@@ -1808,25 +1855,76 @@ end
 
 ---
 
-### Example 4: Multi-TOC Addon (Retail + Classic)
+### Example 4: Multi-Version Addon (Retail + Classic)
 
 **Purpose:** Support multiple WoW versions
+
+#### Option A: Single TOC with Comma-Separated Versions (Recommended)
+
+**Use this when:** Your addon code is the same across all versions.
+
+```
+UniversalAddon/
+    UniversalAddon.toc
+    Core.lua
+    Utils.lua
+```
+
+**UniversalAddon.toc:**
+```
+## Interface: 120000, 110207, 50503, 40402, 11508
+## Title: Universal Addon
+## Author: YourName
+## Version: 1.0.0
+## Notes: Works on Retail, Cata Classic, and Classic Era
+
+Core.lua
+Utils.lua
+```
+
+**Core.lua:**
+```lua
+local isMainline = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
+local isClassic = (WOW_PROJECT_ID == WOW_PROJECT_CLASSIC)
+
+UniversalAddon = {
+    version = "1.0.0",
+    isMainline = isMainline,
+    isClassic = isClassic
+}
+
+-- Shared functionality with version detection for API differences
+function UniversalAddon:Initialize()
+    print("UniversalAddon loaded for " .. (isMainline and "Mainline" or "Classic"))
+
+    -- Handle API differences in code
+    if isMainline then
+        -- Use C_ActionBar namespace (12.0.0+)
+        self.GetActionInfo = C_ActionBar and C_ActionBar.GetActionInfo or GetActionInfo
+    else
+        -- Use legacy globals on Classic
+        self.GetActionInfo = GetActionInfo
+    end
+end
+```
+
+#### Option B: Multiple TOC Files (When Needed)
+
+**Use this when:** You need to load different files for different game versions.
 
 ```
 MultiVersion/
     MultiVersion_Mainline.toc    # Retail
+    MultiVersion_Cata.toc        # Cata Classic
     MultiVersion_Vanilla.toc     # Classic Era
-    MultiVersion_Wrath.toc       # Wrath Classic
 
     # Shared core
     Core.lua
 
-    # Version-specific
+    # Version-specific files
     Mainline\
         Features.lua
-    Vanilla\
-        Features.lua
-    Wrath\
+    Classic\
         Features.lua
 ```
 
@@ -1836,7 +1934,6 @@ MultiVersion/
 ## Title: MultiVersion
 ## Author: YourName
 ## Version: 1.0.0
-## AllowLoadGameType: mainline
 
 Core.lua
 Mainline\Features.lua
@@ -1844,32 +1941,19 @@ Mainline\Features.lua
 
 **MultiVersion_Vanilla.toc:**
 ```
-## Interface: 11503
+## Interface: 11508
 ## Title: MultiVersion
 ## Author: YourName
 ## Version: 1.0.0
-## AllowLoadGameType: vanilla
 
 Core.lua
-Vanilla\Features.lua
+Classic\Features.lua
 ```
 
-**Core.lua:**
-```lua
-local isMainline = (WOW_PROJECT_ID == WOW_PROJECT_MAINLINE)
-local isClassic = (WOW_PROJECT_ID == WOW_PROJECT_CLASSIC)
-
-MultiVersion = {
-    version = "1.0.0",
-    isMainline = isMainline,
-    isClassic = isClassic
-}
-
--- Shared functionality
-function MultiVersion:Initialize()
-    print("MultiVersion loaded for " .. (isMainline and "Mainline" or "Classic"))
-end
-```
+**When Multiple TOCs Are Necessary:**
+- Loading different Lua/XML files per version
+- Using version-specific libraries
+- Significant code path differences that can't be handled with runtime detection
 
 ---
 

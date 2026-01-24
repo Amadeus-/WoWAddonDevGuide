@@ -737,6 +737,39 @@ Secret values are special protected data types that:
 - Propagate through the UI hierarchy
 - Mark widgets with "secret aspects" when applied
 
+### StatusBar Frames and Secret Values (Critical for Health Bars)
+
+**Native StatusBar frames** are designed to handle secret values at the C++ level:
+
+```lua
+-- This WORKS with secret values from UnitHealth/UnitHealthMax:
+local healthBar = CreateFrame("StatusBar", nil, parent)
+healthBar:SetMinMaxValues(0, UnitHealthMax("target"))  -- Secret value OK!
+healthBar:SetValue(UnitHealth("target"))               -- Secret value OK!
+-- The bar displays correctly even though values are secret
+```
+
+**Custom texture-based bars CANNOT use secret values:**
+
+```lua
+-- THIS FAILS with secret values:
+local health = UnitHealth("target")      -- Secret during combat
+local maxHealth = UnitHealthMax("target") -- Secret during combat
+local percent = health / maxHealth        -- ERROR: arithmetic on secret value!
+texture:SetWidth(percent * BAR_WIDTH)     -- Never reached
+```
+
+**Solution: Use UnitHealthPercent for custom bars:**
+
+```lua
+-- UnitHealthPercent returns NON-SECRET percentage (0-100)
+local healthPercent = UnitHealthPercent("target", false, CurveConstants.ScaleTo100)
+local width = (healthPercent / 100) * BAR_WIDTH  -- Safe arithmetic!
+texture:SetWidth(width)
+```
+
+See `12_API_Migration_Guide.md` for comprehensive patterns and examples.
+
 ### Secret Aspects
 
 When a secret value is applied to a widget, it gains a "secret aspect":
