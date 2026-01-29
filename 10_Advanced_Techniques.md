@@ -36,6 +36,8 @@ This guide documents advanced techniques used by production addons like **ArkInv
 
 ## Secret Values System (12.0.0)
 
+> **Complete Reference:** See `12a_Secret_Safe_APIs.md` for the comprehensive secret values API reference, including all detection functions, manipulation functions, SecureTypes containers, and real-world examples from Platynator and Blizzard UI source.
+
 ### Overview
 
 Starting with WoW 12.0.0 (Midnight expansion), Blizzard introduced a **secret values system** to protect sensitive combat information from automation addons. This is a critical change that affects how addons interact with combat-related APIs.

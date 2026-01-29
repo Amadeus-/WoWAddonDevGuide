@@ -118,7 +118,7 @@ bar:SetMinMaxValues(0, UnitHealthMax("target"))  -- Works with secrets!
 bar:SetValue(UnitHealth("target"))               -- Works with secrets!
 ```
 
-See `12_API_Migration_Guide.md` for comprehensive secret value handling patterns.
+See `12a_Secret_Safe_APIs.md` for the complete secret values reference, and `12_API_Migration_Guide.md` for migration patterns.
 
 **New Event Callback System (12.0.0)**:
 ```lua

@@ -8,7 +8,7 @@ This comprehensive knowledge base contains **everything** you need to create, de
 ## ✨ What's Included
 <!-- CLAUDE_SKIP_END -->
 
-### Complete Documentation (13 Guides + Quick Start)
+### Complete Documentation (14 Guides + Quick Start)
 - ✅ **[00_MASTER_PROMPT.md](00_MASTER_PROMPT.md)** - Master overview and entry point
 - ✅ **[01_API_Reference.md](01_API_Reference.md)** - WoW API functions organized by category
 - ✅ **[02_Event_System.md](02_Event_System.md)** - Complete event system documentation
@@ -20,8 +20,9 @@ This comprehensive knowledge base contains **everything** you need to create, de
 - ✅ **[08_Community_Addon_Patterns.md](08_Community_Addon_Patterns.md)** - Ace3, LibStub, community frameworks ⭐
 - ✅ **[09_Addon_Libraries_Guide.md](09_Addon_Libraries_Guide.md)** - Complete library reference (LibStub, Ace3, LibDataBroker, etc.) ⭐
 - ✅ **[10_Advanced_Techniques.md](10_Advanced_Techniques.md)** - Production-level patterns (cross-client, performance, multi-addon) ⭐
-- ✅ **[11_Housing_System_Guide.md](11_Housing_System_Guide.md)** - Housing system APIs and development patterns ⭐ NEW!
+- ✅ **[11_Housing_System_Guide.md](11_Housing_System_Guide.md)** - Housing system APIs and development patterns ⭐
 - ✅ **[12_API_Migration_Guide.md](12_API_Migration_Guide.md)** - API version migration, compatibility wrappers, update strategies ⭐
+- ✅ **[12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md)** - Complete 12.0+ secret values API reference ⭐ NEW!
 - ✅ **[QUICK_START_GUIDE.md](QUICK_START_GUIDE.md)** - Get started in 5 minutes ⭐
 
 ### Reference Data

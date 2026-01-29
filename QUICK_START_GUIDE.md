@@ -32,7 +32,8 @@ Combat-sensitive data is now hidden from addons:
 - Traditional damage meters/combat logs no longer work
 - **⚠️ `C_DamageMeter` API data is ALSO secret-protected** - Third-party damage meters cannot function in 12.0.0+
 - Players must use Blizzard's built-in damage meter (Shift+P or Encounter Journal)
-- See `12_API_Migration_Guide.md` for comprehensive secret value patterns
+- See `12a_Secret_Safe_APIs.md` for the complete secret values API reference
+- See `12_API_Migration_Guide.md` for comprehensive migration patterns
 
 ### API Migrations
 Many global functions have been removed. Use C_* namespaces:
@@ -110,6 +111,7 @@ Many global functions have been removed. Use C_* namespaces:
 11. **10_Advanced_Techniques.md** - Production-level patterns
 12. **11_Housing_System_Guide.md** - Housing system APIs and development
 13. **12_API_Migration_Guide.md** - API version migration and compatibility
+14. **12a_Secret_Safe_APIs.md** - Complete 12.0+ secret values API reference (NEW)
 
 <!-- CLAUDE_SKIP_END -->
 ## Your First Addon - 5 Minute Tutorial

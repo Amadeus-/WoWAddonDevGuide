@@ -44,6 +44,7 @@ https://warcraft.wiki.gg/wiki/Patch_[VERSION]/API_changes
 ```
 
 **Examples:**
+- Patch 12.0.0: https://warcraft.wiki.gg/wiki/Patch_12.0.0/API_changes
 - Patch 11.0.0: https://warcraft.wiki.gg/wiki/Patch_11.0.0/API_changes
 - Patch 11.0.2: https://warcraft.wiki.gg/wiki/Patch_11.0.2/API_changes
 - Patch 10.2.5: https://warcraft.wiki.gg/wiki/Patch_10.2.5/API_changes
@@ -129,67 +130,13 @@ Patch 12.0.0 is the largest API change since the original addon system was intro
 
 The most significant change in 12.0.0 is the introduction of the **Secret Values** system. This system restricts addon automation during combat by making certain API returns unusable by tainted (addon) code.
 
-**What Are Secret Values?**
-```lua
--- During combat, some APIs return "secret values"
--- These values LOOK normal but CANNOT be used in tainted code operations
+> **For comprehensive documentation on secret values, see [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md).**
 
--- Example: Getting action bar info during combat
-local actionType, spellID = GetActionInfo(slot)  -- In combat, spellID may be "secret"
-
--- Attempting to use a secret value in addon code:
-if spellID == 12345 then  -- ERROR: Cannot compare secret values!
-    -- This code may not execute as expected
-end
-```
-
-**Built-in Functions for Secret Values:**
-```lua
--- Check if a value is secret
-if issecretvalue(someValue) then
-    print("Value is secret, cannot use directly")
-end
-
--- Check if you can access a value
-if canaccessvalue(someValue) then
-    -- Safe to use
-else
-    -- Value is secret or restricted
-end
-
--- Wrap a value to make it secret (for secure code)
-local secretVal = secretwrap(regularValue)
-
--- Remove secret values from a table (returns clean copy)
-local cleanTable = scrubsecretvalues(mixedTable)
-
--- Get underlying value (only works in secure code)
-local realValue = secretunwrap(secretValue)  -- Returns nil for tainted code
-```
-
-**New Namespaces for Secret Value Handling:**
-```lua
--- C_Secrets namespace
-C_Secrets.IsSecretValue(value)
-C_Secrets.CanAccessValue(value)
-C_Secrets.GetSecretValueType(value)
-
--- C_RestrictedActions namespace
-C_RestrictedActions.IsActionRestricted(actionType)
-C_RestrictedActions.GetRestrictionReason(actionType)
-C_RestrictedActions.CanPerformAction(actionType)
-```
-
-**Testing CVars for Development:**
-```lua
--- Force secret restrictions for testing (development only)
-SetCVar("secretCombatRestrictionsForced", 1)
-SetCVar("secretEncounterRestrictionsForced", 1)
-SetCVar("secretRestrictionsDebug", 1)
-
--- Check current restriction state
-local inRestriction = C_RestrictedActions.IsInRestrictedState()
-```
+**Quick Overview:**
+- Secret values LOOK normal but CANNOT be used in arithmetic, comparisons, or concatenations during combat
+- Use `issecretvalue(value)` to check if a value is secret
+- Native StatusBar frames accept secret values at C++ level
+- Use `UnitHealthPercent()` / `UnitPowerPercent()` for non-secret percentages
 
 **Migration Strategy for Combat Addons:**
 ```lua
@@ -213,386 +160,135 @@ local function OnUpdate()
 end
 ```
 
+> **See [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md) for:**
+> - Complete list of secret-safe functions (`issecretvalue`, `canaccessvalue`, `scrubsecretvalues`, etc.)
+> - All APIs that return secret values (health, power, action bar, tooltip data)
+> - All APIs that accept secret values (StatusBar, SetTimerDuration, CreateUnitHealPredictionCalculator)
+> - Real-world patterns from Platynator nameplate addon
+> - Testing CVars and debugging techniques
+
 ---
 
-### Secret Values Deep Dive - Unit Health/Power and StatusBars
+#### Nameplate Click Targeting Changes (12.0.0)
 
-This section provides comprehensive guidance on handling secret values in the most common use case: displaying unit health and power bars in nameplates, unit frames, and similar addons.
+WoW 12.0.0 fundamentally changed how nameplate click targeting works. This is a **critical change** for any addon that customizes nameplates (TidyPlates, NeatPlates, Plater, KuiNameplates, etc.).
 
-#### Which APIs Return Secret Values?
+**The Problem:**
 
-The following Unit APIs return **secret values during combat** (or when `secretCombatRestrictionsForced` CVar is enabled):
-
-| API Function | Returns | Secret During Combat |
-|--------------|---------|---------------------|
-| `UnitHealth(unit)` | Current health | Yes - SECRET |
-| `UnitHealthMax(unit)` | Maximum health | Yes - SECRET |
-| `UnitPower(unit, powerType)` | Current power | Yes - SECRET |
-| `UnitPowerMax(unit, powerType)` | Maximum power | Yes - SECRET |
-| `UnitGetTotalAbsorbs(unit)` | Total absorb shields | Yes - SECRET |
-| `UnitGetTotalHealAbsorbs(unit)` | Heal absorb amount | Yes - SECRET |
-| `UnitGetIncomingHeals(unit, healer)` | Incoming heals | Yes - SECRET |
-
-**Non-Secret Alternatives (NEW in 12.0.0):**
-
-| API Function | Returns | Notes |
-|--------------|---------|-------|
-| `UnitHealthPercent(unit, usePredicted, curveConstant)` | 0-100 percentage | **NOT SECRET** - Usable for arithmetic! |
-| `UnitPowerPercent(unit, powerType, curveConstant)` | 0-100 percentage | **NOT SECRET** - Usable for arithmetic! |
-| `UnitHealthMissing(unit)` | Missing health amount | May be secret |
-| `UnitPowerMissing(unit, powerType)` | Missing power amount | May be secret |
-
-#### What You CANNOT Do With Secret Values
-
-Secret values will cause **Lua errors** if you attempt:
+In 12.0.0, Blizzard moved click detection from Lua-level frame handling to C++ level using a `HitTestFrame` child of the nameplate's UnitFrame. This has major implications:
 
 ```lua
--- ARITHMETIC - ALL FAIL WITH SECRET VALUES:
-local percent = health / maxHealth           -- ERROR: attempt to perform arithmetic on a secret value
-local missing = maxHealth - health           -- ERROR: attempt to perform arithmetic on a secret value
-local width = health * barWidth / maxHealth  -- ERROR: attempt to perform arithmetic on a secret value
+-- BEFORE 12.0.0: This was safe
+local blizzardPlate = nameplate.UnitFrame
+blizzardPlate:Hide()  -- Hide Blizzard's plate, show custom plate
+-- Click targeting still worked through custom frames
 
--- COMPARISONS - ALL FAIL WITH SECRET VALUES:
-if health > 0 then                           -- ERROR: attempt to compare (a secret value)
-if health == maxHealth then                  -- ERROR: attempt to compare (a secret value)
-if health < threshold then                   -- ERROR: attempt to compare (a secret value)
-
--- STRING CONCATENATION - FAILS WITH SECRET VALUES:
-local text = "Health: " .. health            -- ERROR: attempt to concatenate a secret value
-print("HP: " .. health)                      -- ERROR: attempt to concatenate a secret value
-
--- STORING FOR LATER USE - The value is still secret:
-local cachedHealth = health
-if cachedHealth > 100 then                   -- ERROR: still a secret value!
+-- AFTER 12.0.0: This BREAKS click targeting!
+local blizzardPlate = nameplate.UnitFrame
+blizzardPlate:Hide()  -- PROBLEM: Also hides the HitTestFrame child!
+-- Result: Players cannot click nameplates to target units!
 ```
 
-#### What You CAN Do With Secret Values
+**Why It Breaks:**
 
-Secret values CAN be passed directly to certain Blizzard UI widgets that have native C++ support for handling them:
+The `HitTestFrame` is a child of `UnitFrame`. When you call `Hide()` on UnitFrame, it also hides all children, including the HitTestFrame that Blizzard's C++ code uses for click detection. Your custom nameplate frames do NOT receive click events for targeting - only the HitTestFrame does.
 
-```lua
--- NATIVE StatusBar FRAMES ACCEPT SECRET VALUES:
-local healthBar = CreateFrame("StatusBar", nil, parent)
-healthBar:SetMinMaxValues(0, UnitHealthMax(unit))  -- Works! Handled at C++ level
-healthBar:SetValue(UnitHealth(unit))               -- Works! Handled at C++ level
+**The Solution:**
 
--- FONTSTRINGS CAN DISPLAY SECRET VALUES (but you can't read them back):
-local healthText = healthBar:CreateFontString(nil, "OVERLAY")
--- Use special formatting that handles secrets:
-healthText:SetFormattedText("%d", UnitHealth(unit))  -- May work with special handling
-```
-
-#### StatusBar Widgets and Secret Values - The Key Insight
-
-**Native StatusBar frames** (created with `CreateFrame("StatusBar")`) are specially designed to accept secret values:
+Use `SetAlpha(0)` instead of `Hide()` to make the Blizzard nameplate invisible while keeping the HitTestFrame active:
 
 ```lua
--- This pattern WORKS with secret values:
-local function UpdateHealthBar(unit)
-    local health = UnitHealth(unit)      -- May be secret
-    local maxHealth = UnitHealthMax(unit) -- May be secret
+-- CORRECT approach for 12.0.0+
+local function HideBlizzardPlate(nameplate)
+    local unitFrame = nameplate.UnitFrame
+    if unitFrame then
+        -- Make invisible but keep HitTestFrame active for click targeting
+        unitFrame:SetAlpha(0)
 
-    -- Native StatusBar handles secrets internally at C++ level
-    healthBar:SetMinMaxValues(0, maxHealth)
-    healthBar:SetValue(health)
-    -- The bar will display correctly even with secret values!
-end
-```
-
-**Custom texture-based bars CANNOT use secret values:**
-
-```lua
--- THIS PATTERN FAILS with secret values:
-local function UpdateTextureHealthBar(unit)
-    local health = UnitHealth(unit)       -- May be secret
-    local maxHealth = UnitHealthMax(unit) -- May be secret
-
-    -- FAILS: Cannot do arithmetic with secrets!
-    local percent = health / maxHealth    -- ERROR!
-    local width = percent * BAR_WIDTH     -- ERROR!
-
-    healthTexture:SetWidth(width)         -- Never reached
-end
-```
-
-#### The UnitHealthPercent/UnitPowerPercent Solution
-
-For addons that use **custom texture-based status bars** (like nameplate addons), Blizzard provides non-secret percentage APIs:
-
-```lua
--- UnitHealthPercent returns a REGULAR NUMBER (0-100), not a secret value!
--- Parameters:
---   unit: The unit token
---   usePredicted: boolean - Include predicted healing/absorbs (optional)
---   curveConstant: CurveConstants.ScaleTo100 to get 0-100 range (optional)
-
-local function UpdateTextureHealthBar(unit)
-    -- Get non-secret percentage (0-100 scale)
-    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
-
-    -- Now we can do arithmetic!
-    local width = (healthPercent / 100) * BAR_WIDTH
-
-    healthTexture:SetWidth(width)
-    healthTexture:Show()
-end
-
--- Similarly for power bars:
-local function UpdateTexturePowerBar(unit, powerType)
-    local powerPercent = UnitPowerPercent(unit, powerType, CurveConstants.ScaleTo100)
-    local width = (powerPercent / 100) * BAR_WIDTH
-
-    powerTexture:SetWidth(width)
-end
-```
-
-**CurveConstants Reference:**
-```lua
--- Available curve constants for scaling:
-CurveConstants.ScaleTo100  -- Scales result to 0-100 range
-CurveConstants.ScaleTo1    -- Scales result to 0-1 range (may exist)
-```
-
-#### Complete Example: Custom Nameplate Health Bar
-
-Here's a complete working example for a custom nameplate addon with texture-based health bars:
-
-```lua
--- Configuration
-local BAR_WIDTH = 100
-local BAR_HEIGHT = 10
-
--- Create the health bar using textures (NOT StatusBar frame)
-local function CreateCustomHealthBar(parent)
-    local bar = {}
-
-    -- Background
-    bar.background = parent:CreateTexture(nil, "BACKGROUND")
-    bar.background:SetColorTexture(0.1, 0.1, 0.1, 0.8)
-    bar.background:SetSize(BAR_WIDTH, BAR_HEIGHT)
-    bar.background:SetPoint("CENTER")
-
-    -- Health fill texture
-    bar.fill = parent:CreateTexture(nil, "ARTWORK")
-    bar.fill:SetColorTexture(0, 1, 0, 1)
-    bar.fill:SetHeight(BAR_HEIGHT)
-    bar.fill:SetPoint("LEFT", bar.background, "LEFT")
-
-    -- Update function using UnitHealthPercent
-    function bar:Update(unit)
-        if not UnitExists(unit) then
-            self.fill:Hide()
-            return
-        end
-
-        -- Use UnitHealthPercent - returns NON-SECRET percentage!
-        local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100) or 0
-
-        -- Safe to do arithmetic with percentage
-        local width = math.max(1, (healthPercent / 100) * BAR_WIDTH)
-
-        self.fill:SetWidth(width)
-        self.fill:Show()
-
-        -- Color based on health (this comparison is safe with percentage)
-        if healthPercent < 25 then
-            self.fill:SetColorTexture(1, 0, 0, 1)  -- Red
-        elseif healthPercent < 50 then
-            self.fill:SetColorTexture(1, 1, 0, 1)  -- Yellow
-        else
-            self.fill:SetColorTexture(0, 1, 0, 1)  -- Green
-        end
+        -- Optionally disable mouseover highlights on Blizzard elements
+        -- (the HitTestFrame still handles the actual click detection)
     end
-
-    return bar
 end
-```
 
-#### Health Text Display with Secret Values
+local function ShowBlizzardPlate(nameplate)
+    local unitFrame = nameplate.UnitFrame
+    if unitFrame then
+        -- Restore visibility
+        unitFrame:SetAlpha(1)
+    end
+end
 
-For displaying health text, you have several options:
+-- Example usage in nameplate addon:
+local function OnNamePlateAdded(unit)
+    local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
+    if nameplate then
+        -- Hide Blizzard plate visually (but keep click targeting!)
+        HideBlizzardPlate(nameplate)
 
-**Option 1: Use UnitHealthPercent for percentage display:**
-```lua
-local function UpdateHealthText(fontString, unit)
-    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
-    if healthPercent then
-        fontString:SetFormattedText("%.0f%%", healthPercent)
-    else
-        fontString:SetText("")
+        -- Create/show your custom plate
+        ShowCustomPlate(nameplate, unit)
+    end
+end
+
+local function OnNamePlateRemoved(unit)
+    local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
+    if nameplate then
+        -- Restore Blizzard plate
+        ShowBlizzardPlate(nameplate)
+
+        -- Hide your custom plate
+        HideCustomPlate(nameplate)
     end
 end
 ```
 
-**Option 2: Use native StatusBar text with secret values:**
+**New API (May Be Restricted):**
+
+WoW 12.0.0 added a new API for registering custom hit test frames:
+
 ```lua
--- If using a native StatusBar, you can use its built-in text handling
-local healthBar = CreateFrame("StatusBar", nil, parent)
-
--- Create text that inherits secret value handling from parent
-local healthText = healthBar:CreateFontString(nil, "OVERLAY")
-healthText:SetPoint("CENTER")
-
--- The StatusBar can format its value as text
-healthBar.Text = healthText
--- Note: Exact method depends on your StatusBar implementation
+C_NamePlateManager.SetNamePlateHitTestFrame(frame)
 ```
 
-**Option 3: Show health as missing/deficit using percentage:**
+However, this API may be restricted to Blizzard code only. Testing indicates it may not work for third-party addons. The `SetAlpha(0)` approach is the reliable solution.
+
+**Migration Checklist for Nameplate Addons:**
+
+1. Search your code for any `UnitFrame:Hide()` or `plate.UnitFrame:Hide()` calls
+2. Replace with `UnitFrame:SetAlpha(0)`
+3. Update show logic to use `UnitFrame:SetAlpha(1)` instead of `Show()`
+4. Test click targeting on both friendly and hostile nameplates
+5. Test in combat (where this is most critical)
+6. Verify tab-targeting still works (separate system, but worth checking)
+
+**Debug Tip:**
+
+If click targeting stops working after your addon loads, check if the nameplate's UnitFrame or its children are hidden:
+
 ```lua
-local function UpdateHealthDeficit(fontString, unit)
-    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100)
-    if healthPercent then
-        local deficit = 100 - healthPercent
-        if deficit > 0 then
-            fontString:SetFormattedText("-%.0f%%", deficit)
-        else
-            fontString:SetText("")  -- Full health, no deficit
+local function DebugNameplateHitTest(unit)
+    local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
+    if nameplate and nameplate.UnitFrame then
+        local uf = nameplate.UnitFrame
+        print("UnitFrame shown:", uf:IsShown())
+        print("UnitFrame alpha:", uf:GetAlpha())
+
+        -- Check for HitTestFrame child
+        for _, child in pairs({uf:GetChildren()}) do
+            local name = child:GetName() or child:GetDebugName() or "unnamed"
+            if name:find("HitTest") then
+                print("HitTestFrame found:", name, "shown:", child:IsShown())
+            end
         end
     end
 end
 ```
-
-#### CreateUnitHealPredictionCalculator Pattern
-
-For advanced health bar addons that need to show incoming heals, absorb shields, and heal absorbs, WoW 12.0.0 provides a special calculator pattern:
-
-```lua
--- Create a heal prediction calculator for a unit
-local calculator = CreateUnitHealPredictionCalculator(unit)
-
--- The calculator returns objects that can be used with StatusBars
-local healthBar = CreateFrame("StatusBar", nil, parent)
-local healPredictionBar = CreateFrame("StatusBar", nil, parent)
-local absorbBar = CreateFrame("StatusBar", nil, parent)
-
-local function UpdateHealthBarsWithPrediction(unit)
-    -- Get prediction data from calculator
-    local healthData = calculator:GetHealthData()
-
-    -- Main health bar - uses secret values natively
-    healthBar:SetMinMaxValues(0, healthData.maxHealth)
-    healthBar:SetValue(healthData.currentHealth)
-
-    -- Incoming heals prediction bar
-    if healthData.incomingHeals and healthData.incomingHeals > 0 then
-        healPredictionBar:SetMinMaxValues(0, healthData.maxHealth)
-        healPredictionBar:SetValue(healthData.currentHealth + healthData.incomingHeals)
-        healPredictionBar:Show()
-    else
-        healPredictionBar:Hide()
-    end
-
-    -- Absorb shield bar
-    if healthData.totalAbsorbs and healthData.totalAbsorbs > 0 then
-        absorbBar:SetMinMaxValues(0, healthData.maxHealth)
-        absorbBar:SetValue(healthData.totalAbsorbs)
-        absorbBar:Show()
-    else
-        absorbBar:Hide()
-    end
-end
-```
-
-**Note:** The exact API for `CreateUnitHealPredictionCalculator` may vary. Check Blizzard's UnitFrame code in the Blizzard UI source for the current implementation pattern.
-
-#### Practical Migration Example: NeatPlates/TidyPlates Style Addon
-
-Here's how a nameplate addon might migrate from pre-12.0.0 to handle secret values:
-
-**BEFORE (11.x - Broken in 12.0.0):**
-```lua
-local function UpdateHealthBar(bar, unit)
-    local health = UnitHealth(unit)
-    local maxHealth = UnitHealthMax(unit)
-
-    -- FAILS in 12.0.0: Cannot do arithmetic with secret values!
-    local percent = health / maxHealth
-    bar.healthBar:SetWidth(percent * bar.width)
-    bar.healthText:SetText(FormatHealth(health, maxHealth))
-end
-```
-
-**AFTER (12.0.0 Compatible):**
-```lua
-local function UpdateHealthBar(bar, unit)
-    -- Use UnitHealthPercent for texture-based bars
-    local healthPercent = UnitHealthPercent(unit, false, CurveConstants.ScaleTo100) or 0
-
-    -- Arithmetic is safe with percentage
-    local width = math.max(1, (healthPercent / 100) * bar.width)
-    bar.healthBar:SetWidth(width)
-
-    -- Display percentage instead of absolute values
-    bar.healthText:SetFormattedText("%.0f%%", healthPercent)
-
-    -- Or use a native StatusBar for the actual display
-    -- bar.nativeStatusBar:SetMinMaxValues(0, UnitHealthMax(unit))
-    -- bar.nativeStatusBar:SetValue(UnitHealth(unit))
-end
-```
-
-#### Hybrid Approach: Native StatusBar with Custom Visuals
-
-For the best of both worlds, you can use a native StatusBar for the health logic but overlay custom textures:
-
-```lua
-local function CreateHybridHealthBar(parent)
-    -- Native StatusBar handles secret values
-    local statusBar = CreateFrame("StatusBar", nil, parent)
-    statusBar:SetStatusBarTexture("Interface\\Buttons\\WHITE8X8")
-    statusBar:SetStatusBarColor(0, 1, 0, 1)
-    statusBar:SetSize(BAR_WIDTH, BAR_HEIGHT)
-
-    -- The StatusBar automatically handles:
-    -- - Secret health values
-    -- - Smooth interpolation
-    -- - Proper fill calculation
-
-    -- Add custom overlay textures for visual styling
-    local overlay = statusBar:CreateTexture(nil, "OVERLAY")
-    overlay:SetAllPoints()
-    overlay:SetTexture("Interface\\AddOns\\MyAddon\\BarOverlay")
-    overlay:SetBlendMode("ADD")
-
-    -- Update function
-    function statusBar:UpdateHealth(unit)
-        -- These calls work with secret values!
-        self:SetMinMaxValues(0, UnitHealthMax(unit))
-        self:SetValue(UnitHealth(unit))
-    end
-
-    return statusBar
-end
-```
-
-#### Testing Secret Value Handling
-
-Use these CVars to force secret restrictions for testing outside of combat:
-
-```lua
--- Force secret restrictions (for testing)
-/run SetCVar("secretCombatRestrictionsForced", 1)
-
--- Disable forced restrictions (return to normal)
-/run SetCVar("secretCombatRestrictionsForced", 0)
-
--- Enable debug output for secret values
-/run SetCVar("secretRestrictionsDebug", 1)
-```
-
-**Test Checklist:**
-1. Enable `secretCombatRestrictionsForced`
-2. Target a friendly player or NPC
-3. Verify health bars display correctly
-4. Verify no Lua errors in error log
-5. Test health percentage calculations
-6. Test health text formatting
-7. Disable the CVar and verify normal operation
 
 ---
 
 #### C_ActionBar Namespace (Replaces Global Action Bar Functions)
+
+> **Note:** C_ActionBar functions may return **secret values during combat**. See [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md) for handling patterns.
 
 ```lua
 -- OLD globals (REMOVED):
@@ -610,11 +306,11 @@ HasAction(slot)
 ActionHasRange(slot)
 
 -- NEW C_ActionBar namespace:
-C_ActionBar.GetActionInfo(slot)
-C_ActionBar.GetActionTexture(slot)
+C_ActionBar.GetActionInfo(slot)       -- id may be SECRET during combat
+C_ActionBar.GetActionTexture(slot)    -- May be SECRET during combat
 C_ActionBar.GetActionCooldown(slot)
 C_ActionBar.GetActionCount(slot)
-C_ActionBar.IsUsableAction(slot)
+C_ActionBar.IsUsableAction(slot)      -- May be SECRET during combat
 C_ActionBar.IsCurrentAction(slot)
 C_ActionBar.IsAutoRepeatAction(slot)
 C_ActionBar.IsAttackAction(slot)
@@ -734,6 +430,8 @@ This is part of Blizzard's effort to prevent addons from "solving" encounter mec
 
 > **⚠️ CRITICAL DISCOVERY (Verified January 2026):**
 > While C_DamageMeter API exists and appears functional, **the actual data returned is protected as "secret values"** and cannot be used by third-party addons. This API appears to be designed ONLY for Blizzard's built-in damage meter UI.
+>
+> For details on secret values, see [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md).
 
 **What Happens When You Try to Use It:**
 ```lua
@@ -1306,6 +1004,68 @@ SetCVar("showTutorials", value)
 - Better error messages for secret value violations
 - Additional testing CVars for addon developers
 - Performance improvements for secret value checks
+- See [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md) for complete reference
+
+**Closing the Blizzard Settings Panel (12.0.0+):**
+
+When addon code needs to close the Blizzard Settings panel (e.g., before opening a custom config dialog), there are important considerations:
+
+```lua
+-- WRONG: Does NOT exist
+Settings.CloseUI()  -- nil error - this function does not exist
+
+-- WRONG: Triggers protected function error
+SettingsPanel:Close()  -- Causes ADDON_ACTION_BLOCKED
+
+-- CORRECT: Use HideUIPanel instead
+if SettingsPanel and SettingsPanel:IsShown() then
+    HideUIPanel(SettingsPanel)
+end
+```
+
+**Why SettingsPanel:Close() fails:**
+- The `Close()` method internally calls `Commit()` which triggers `SaveBindings()` - a protected function
+- When tainted (addon) code calls this chain, WoW raises `ADDON_ACTION_BLOCKED`
+- `HideUIPanel()` simply hides the panel without attempting to save/commit settings
+
+**Common Scenario - AceConfig Standalone Dialogs:**
+```lua
+-- When opening an AceConfig standalone dialog, you may want to close
+-- Blizzard's Settings panel if it's open
+
+local function OpenMyAddonConfig()
+    -- Close Blizzard Settings panel first
+    if SettingsPanel and SettingsPanel:IsShown() then
+        HideUIPanel(SettingsPanel)
+    end
+
+    -- Now open our standalone config dialog
+    LibStub("AceConfigDialog-3.0"):Open("MyAddon")
+end
+```
+
+**Integration with Interface Options:**
+```lua
+-- If registering with Interface Options, you can use this pattern
+-- to redirect to a standalone dialog
+
+local function OpenStandaloneOptions()
+    if SettingsPanel and SettingsPanel:IsShown() then
+        HideUIPanel(SettingsPanel)
+    end
+    LibStub("AceConfigDialog-3.0"):Open("MyAddon")
+end
+
+-- Register a basic category that redirects
+local category = Settings.RegisterCanvasLayoutCategory(
+    panel, "MyAddon"
+)
+category.ID = "MyAddon"
+Settings.RegisterAddOnCategory(category)
+
+-- On the panel, add a button to open standalone config
+-- (Or just hook your slash command to call OpenStandaloneOptions)
+```
 
 ---
 
@@ -2708,7 +2468,7 @@ This is intentional. C_DamageMeter exists for Blizzard's OWN built-in UI, not fo
 | Old API | New API | Version | Notes |
 |---------|---------|---------|-------|
 | `GetMouseFocus()` | `GetMouseFoci()[1]` | 12.0.0 | Returns table; use compat wrapper |
-| `GetActionInfo(slot)` | `C_ActionBar.GetActionInfo(slot)` | 12.0.0 | Secret values in combat |
+| `GetActionInfo(slot)` | `C_ActionBar.GetActionInfo(slot)` | 12.0.0 | Secret values in combat - see [12a](12a_Secret_Safe_APIs.md) |
 | `GetActionTexture(slot)` | `C_ActionBar.GetActionTexture(slot)` | 12.0.0 | Namespace move |
 | `GetActionCooldown(slot)` | `C_ActionBar.GetActionCooldown(slot)` | 12.0.0 | Namespace move |
 | `HasAction(slot)` | `C_ActionBar.HasAction(slot)` | 12.0.0 | Namespace move |
@@ -2802,6 +2562,7 @@ You can keep your addons working across expansions with minimal effort.
 ---
 
 **Related Guides:**
+- [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md) - **Complete Secret Values API reference**
 - [10_Advanced_Techniques.md](10_Advanced_Techniques.md) - Cross-client compatibility
 - [04_Addon_Structure.md](04_Addon_Structure.md) - TOC file versioning
 - [05_Patterns_And_Best_Practices.md](05_Patterns_And_Best_Practices.md) - Code patterns
@@ -2814,8 +2575,8 @@ You can keep your addons working across expansions with minimal effort.
 
 ---
 
-**Version:** 2.3 - Added comprehensive Secret Values Deep Dive for Unit Health/Power and StatusBars
-**Last Updated:** 2026-01-23
+**Version:** 2.4 - Deduplicated secret values content; moved detailed API docs to 12a_Secret_Safe_APIs.md
+**Last Updated:** 2026-01-28
 **Coverage:** API changes from WoW 9.0 through 12.0.0
 
 <!-- CLAUDE_SKIP_END -->

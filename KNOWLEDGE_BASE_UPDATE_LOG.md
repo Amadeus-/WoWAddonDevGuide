@@ -1,6 +1,162 @@
 <\!-- CLAUDE_SKIP_START -->
 # WoW Addon Development Knowledge Base - Update Log
 
+## Version 2.5 - 2026-01-28
+
+### Comprehensive Secret-Safe API Documentation (12.0.0+)
+
+**Summary:**
+Created a new comprehensive documentation file (`12a_Secret_Safe_APIs.md`) that provides complete coverage of WoW 12.0.0's secret values system - one of the most significant API changes in WoW addon history.
+
+**Files Created:**
+- `12a_Secret_Safe_APIs.md` - Complete 1000+ line reference for secret values system
+
+**Files Updated:**
+- `00_MASTER_PROMPT.md` - Added reference to new file
+- `01_API_Reference.md` - Updated cross-reference
+- `03_UI_Framework.md` - Updated cross-reference
+- `README.md` - Added to documentation list (now 14 guides)
+- `QUICK_START_GUIDE.md` - Added to guide list
+- `WoWAddon-Expert.md` (agent file) - Added quick-reference section
+
+**Research Sources:**
+1. **Platynator addon** - Real-world addon using `issecretvalue()` for absorb text, guild text, MSP integration
+2. **Blizzard UI Source (12.0.0)** - 50+ files using secret-safe patterns including:
+   - `RestrictedInfrastructure.lua` - Core secret handling
+   - `SecureTypes.lua` - SecureMap, SecureArray, SecureNumber containers
+   - `Pools.lua` - Object pool secret rejection patterns
+   - `Dump.lua` - Handling secrets in /dump command
+   - `AuraUtil.lua` - `securecallfunction` patterns
+   - `CallbackRegistry.lua` - Secure callback execution
+3. **FrameScriptDocumentation.lua** - Official API documentation for all secret functions
+
+**Documentation Includes:**
+
+1. **Core Detection Functions:**
+   - `issecretvalue(val)` - Check if value is secret
+   - `canaccessvalue(val)` - Check caller access
+   - `canaccessallvalues(...)` - Check multiple values
+   - `hasanysecretvalues(...)` - Check for any secrets
+   - `canaccesssecrets()` - Check caller permissions
+   - `canaccesstable(tbl)` - Check table access
+   - `issecrettable(tbl)` - Check if table is secret
+
+2. **Manipulation Functions:**
+   - `scrubsecretvalues(...)` - Replace secrets with nil
+   - `scrub(...)` - Aggressive scrubbing
+   - `mapvalues(fn, ...)` - Transform values
+   - `secretwrap(...)` - Create secrets (restricted)
+   - `secretunwrap(...)` - Unwrap secrets (restricted)
+   - `dropsecretaccess()` - Drop privileges
+
+3. **Secure Execution Functions:**
+   - `securecallfunction(fn, ...)` - Call function securely
+   - `secureexecuterange(tbl, fn, ...)` - Secure table iteration
+   - `forceinsecure()` - Force tainted context
+
+4. **Table Security System:**
+   - `SetTableSecurityOption(tbl, option)`
+   - `TableSecurityOption.DisallowTaintedAccess`
+   - `TableSecurityOption.DisallowSecretKeys`
+   - `TableSecurityOption.SecretWrapContents`
+
+5. **SecureTypes Containers:**
+   - `SecureTypes.CreateSecureMap()`
+   - `SecureTypes.CreateSecureArray()`
+   - `SecureTypes.CreateSecureStack()`
+   - `SecureTypes.CreateSecureValue()`
+   - `SecureTypes.CreateSecureNumber()`
+   - `SecureTypes.CreateSecureBoolean()`
+   - `SecureTypes.CreateSecureFunction()`
+
+6. **Practical Patterns:**
+   - Check-before-use pattern
+   - Defer-to-out-of-combat pattern
+   - Native StatusBar for secret display
+   - Percentage-based custom bars
+   - Real-world examples from Platynator and Blizzard UI
+
+7. **Testing Section:**
+   - CVars for forcing restrictions
+   - Test commands
+   - Verification checklist
+
+8. **Migration Checklist:**
+   - For existing addons
+   - For new addons
+
+**Why This Was Needed:**
+The secret values system is the most significant API change in WoW addon history. Without proper documentation, addon developers face:
+- Mysterious runtime errors ("attempt to compare a secret value")
+- Broken functionality during combat
+- No clear migration path from pre-12.0 patterns
+- Limited understanding of which APIs are affected
+
+This guide provides a single authoritative reference for all secret-safe API patterns.
+
+---
+
+## Version 2.4 - 2026-01-24
+
+### Closing Blizzard Settings Panel Documentation (12.0.0)
+
+**Summary:**
+Added documentation about the correct way to programmatically close the Blizzard Settings panel from addon code. This is a common requirement for addons that use AceConfig or similar libraries for standalone configuration dialogs.
+
+**Files Updated:**
+- `12_API_Migration_Guide.md` - New section "Closing the Blizzard Settings Panel (12.0.0+)"
+
+**The Issue:**
+When addon code attempts to close the Blizzard Settings panel before opening its own config dialog, common approaches fail:
+
+1. **`Settings.CloseUI()`** - Does not exist (nil error)
+2. **`SettingsPanel:Close()`** - Triggers `ADDON_ACTION_BLOCKED` because it internally calls `Commit()` which triggers `SaveBindings()` - a protected function
+
+**Correct Approach:**
+```lua
+if SettingsPanel and SettingsPanel:IsShown() then
+    HideUIPanel(SettingsPanel)
+end
+```
+
+**Why This Was Added:**
+Discovered during real-world addon development when trying to create a workflow where clicking on an addon's entry in the Blizzard Interface Options would close the Settings panel and open a standalone AceConfig dialog instead. The natural approaches (`Close()` method, hypothetical `CloseUI()` function) either don't exist or trigger protected function errors.
+
+**Use Cases Documented:**
+- Opening AceConfig standalone dialogs
+- Redirecting from Interface Options to standalone config
+- General pattern for hiding built-in panels safely
+
+---
+
+## Version 2.3 - 2026-01-24
+
+### Nameplate Click Targeting Changes Documentation (12.0.0)
+
+**Summary:**
+Added critical documentation about WoW 12.0.0's change to how nameplate click targeting works. This is essential for any addon that replaces or modifies nameplates (TidyPlates, NeatPlates, Plater, KuiNameplates, etc.).
+
+**Files Updated:**
+- `12_API_Migration_Guide.md` - New section "Nameplate Click Targeting Changes (12.0.0)"
+
+**The Issue:**
+In WoW 12.0.0, Blizzard moved nameplate click detection from Lua-level frame handling to C++ level using a `HitTestFrame` child of the nameplate's UnitFrame. This breaks click targeting for any addon that uses `Hide()` on the Blizzard UnitFrame.
+
+**Key Points Documented:**
+1. **Problem**: `UnitFrame:Hide()` also hides the HitTestFrame child, breaking click targeting
+2. **Solution**: Use `SetAlpha(0)` instead of `Hide()` to make Blizzard plates invisible while keeping click targeting active
+3. **New API**: `C_NamePlateManager.SetNamePlateHitTestFrame(frame)` exists but may be restricted to Blizzard code only
+4. **Migration Checklist**: Step-by-step guide for updating nameplate addons
+5. **Debug Tip**: Code to check if HitTestFrame is properly visible
+
+**Why This Was Added:**
+Discovered during real-world testing of NeatPlates nameplate addon in WoW 12.0.0. Click targeting was completely broken until the Hide()/SetAlpha(0) pattern was identified. This is a common issue that will affect many nameplate addons.
+
+**Documentation Location:**
+Added immediately after the "Testing Secret Value Handling" section in the 12.0.0 changes, keeping all nameplate-related content together (secret values for health bars + click targeting).
+
+---
+
 ## Version 2.2 - 2026-01-22
 
 ### Critical Discovery: C_DamageMeter API Data is SECRET-PROTECTED
@@ -410,9 +566,9 @@ This helps future maintainers understand the evolution and rationale behind the 
 
 ---
 
-**Log Version:** 2.0
+**Log Version:** 2.4
 **Created:** 2025-10-19
-**Last Updated:** 2026-01-20
+**Last Updated:** 2026-01-24
 **Maintained By:** AI-assisted documentation team
-**Knowledge Base Status:** Active, Version 2.0 (12.0.0 Midnight)
+**Knowledge Base Status:** Active, Version 2.4 (12.0.0 Midnight)
 <\!-- CLAUDE_SKIP_END -->

@@ -768,7 +768,7 @@ local width = (healthPercent / 100) * BAR_WIDTH  -- Safe arithmetic!
 texture:SetWidth(width)
 ```
 
-See `12_API_Migration_Guide.md` for comprehensive patterns and examples.
+See `12a_Secret_Safe_APIs.md` for the complete secret values API reference, and `12_API_Migration_Guide.md` for migration patterns and examples.
 
 ### Secret Aspects
 
