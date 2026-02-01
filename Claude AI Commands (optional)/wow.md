@@ -91,6 +91,7 @@ When reviewing addons with multiple files:
 - Localize global lookups for performance
 - Handle Secret Values in combat (12.0.0+) - use `issecretvalue()` to check
 - Use C_ActionBar, C_CombatLog namespaces (globals removed in 12.0.0)
+- **Debug Output**: NEVER output debug info to chat frames. ALWAYS create a scrollable, copy-pasteable window (EditBox with multi-line support) so users can easily select and copy debug output for reporting issues
 - **When researching**: Check Blizzard's UI source at `D:\Games\World of Warcraft\_retail_\Interface\+wow-ui-source+ (12.0.0)\` for official implementation examples
 
 ## Workflow
