@@ -1186,6 +1186,27 @@ colorCurve:SetDuration(1.0);
 local duration = CreateDuration(5.0);  -- 5 second duration
 ```
 
+### StatusBar Floating-Point Precision
+
+**WARNING:** Never pass large epoch-millisecond timestamps directly to `StatusBar:SetMinMaxValues()` and `SetValue()`. The StatusBar widget internally computes `(value - min) / (max - min)` using floating-point arithmetic. With values like `1,738,412,345,000` (13 significant digits) but only ~7 digits of float precision, the fill fraction gets quantized, causing the bar to jump in discrete increments instead of filling smoothly.
+
+**Always normalize to small ranges:**
+```lua
+-- WRONG: Raw epoch milliseconds (choppy animation)
+castBar:SetMinMaxValues(startTimeMs, endTimeMs)  -- e.g., 1738412345000, 1738412347500
+castBar:SetValue(GetTime() * 1000)
+
+-- CORRECT: Normalized to small range (smooth animation)
+local durationSec = (endTimeMs - startTimeMs) / 1000
+castBar:SetMinMaxValues(0, durationSec)  -- e.g., 0, 2.5
+castBar:SetValue(GetTime() - startTimeMs / 1000)
+
+-- BEST (12.0.0+): Use SetTimerDuration (C++ handles everything)
+castBar:SetTimerDuration(UnitCastingDuration(unitid))
+```
+
+This applies to any StatusBar where the min/max range involves large absolute values with small relative differences. Health bars are typically fine (small values), but cast bars using epoch timestamps are particularly vulnerable.
+
 ### Testing Secret Value Handling
 
 ```lua

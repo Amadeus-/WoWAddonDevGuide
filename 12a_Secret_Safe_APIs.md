@@ -38,6 +38,44 @@ print("HP: " .. health)      -- ERROR: attempt to concatenate a secret value
 healthBar:SetValue(health)   -- Native StatusBar accepts secrets at C++ level
 ```
 
+### Core Principle: Pass Secrets Directly to Engine APIs
+
+When a WoW API returns a secret value, the preferred approach is to pass it **DIRECTLY** to engine-level C++ APIs rather than trying to unwrap, convert, or manipulate it in Lua.
+
+Engine APIs that accept secret values include:
+- `FontString:SetText()` -- display secret strings directly
+- `StatusBar:SetValue()` / `SetMinMaxValues()` -- display secret numbers
+- `StatusBar:SetTimerDuration()` -- animate with secret duration objects
+- `CooldownFrame:SetCooldownFromDurationObject()` -- cooldown display
+- `Frame:SetAlphaFromBoolean()` -- conditional visibility
+
+The **WRONG** approach is to use `issecretvalue()` to check and then provide a fallback value for display. Only use `issecretvalue()` as a guard when you **MUST** perform Lua operations (arithmetic, comparison, string ops, table indexing) on the value. If the value is just being displayed by an engine widget, pass it through untouched.
+
+```lua
+-- CORRECT: Pass secret directly to engine API for display
+local health = UnitHealth("target")
+healthBar:SetValue(health)              -- Engine handles it
+healthText:SetText(someSecretString)    -- Engine handles it
+
+-- WRONG: Unnecessary fallback for display-only use
+local health = UnitHealth("target")
+if issecretvalue(health) then
+    healthBar:SetValue(0)  -- Don't do this if the bar accepts secrets!
+else
+    healthBar:SetValue(health)
+end
+
+-- CORRECT use of issecretvalue: when you need Lua operations
+local health = UnitHealth("target")
+if issecretvalue(health) then
+    -- Can't do arithmetic, use percentage API instead
+    local pct = UnitHealthPercent("target", false, CurveConstants.ScaleTo100) or 0
+    customTexture:SetWidth((pct / 100) * BAR_WIDTH)
+else
+    customTexture:SetWidth((health / maxHealth) * BAR_WIDTH)
+end
+```
+
 ---
 
 ## Why Secret Values Exist
@@ -643,6 +681,58 @@ The following APIs return secret values **during combat** (or when `secretCombat
 | `UnitHealthPercent(unit, usePredicted, curveConstant)` | 0-100 percentage | **NOT SECRET** - Use for arithmetic! |
 | `UnitPowerPercent(unit, powerType, curveConstant)` | 0-100 percentage | **NOT SECRET** - Use for arithmetic! |
 
+### Unit Comparison and Identity APIs
+
+Several unit APIs return secret values during combat that cause errors if used directly in boolean tests, comparisons, or as table keys.
+
+| API | Returns | Secret During Combat | Notes |
+|-----|---------|---------------------|-------|
+| `UnitIsUnit(unit1, unit2)` | boolean | **YES** | Cannot use in `if` directly |
+| `UnitIsDead(unit)` | boolean | **Sometimes** | May be secret in restricted contexts |
+| `UnitName(unit)` | string | **Sometimes** | Cannot use as table key or in string ops |
+| `UnitClass(unit)` | string, string | **Sometimes** | Class token may be secret |
+| `UnitGUID(unit)` | string | **Sometimes** | Cannot use as table key |
+
+**`UnitIsUnit()` is particularly dangerous** because its return value is commonly used in `if` conditions. Attempting a boolean test on a secret value causes: `"attempt to perform boolean test on a secret value"`.
+
+```lua
+-- WRONG: Direct boolean test on potentially secret value
+local isTarget = UnitIsUnit("target", unitid)
+if isTarget then  -- ERROR if isTarget is secret!
+    -- highlight as target
+end
+
+-- CORRECT: Sanitize immediately after the API call
+local isTarget = UnitIsUnit("target", unitid)
+if issecretvalue and issecretvalue(isTarget) then
+    isTarget = false  -- Safe fallback: assume not the target
+end
+if isTarget then
+    -- highlight as target
+end
+
+-- ALSO WRONG: Storing secret in table then using later
+local unitFlags = {}
+unitFlags[unitid] = UnitIsUnit("target", unitid)  -- May store secret
+-- ... later ...
+if unitFlags[unitid] then  -- ERROR if secret was stored!
+
+-- CORRECT: Sanitize before storing
+local isTarget = UnitIsUnit("target", unitid)
+if issecretvalue and issecretvalue(isTarget) then
+    isTarget = false
+end
+unitFlags[unitid] = isTarget  -- Now safe to use later
+
+-- UnitName/UnitGUID: Cannot use as table keys when secret
+local name = UnitName("target")
+if issecretvalue and issecretvalue(name) then
+    -- Can't index tables with this name or do string operations
+    -- But CAN pass to FontString:SetText()
+    nameText:SetText(name)
+end
+```
+
 ### Action Bar APIs
 
 All C_ActionBar functions may return secret values during combat:
@@ -683,7 +773,31 @@ end
 
 ## APIs That Accept Secret Values
 
-These UI widgets have C++ level support for accepting and displaying secret values:
+These UI widgets have C++ level support for accepting and displaying secret values. At the engine level, these methods have `SecretArguments = "AllowedWhenTainted"`, meaning the C++ code natively handles secret values without any Lua-side unwrapping.
+
+### FontString:SetText()
+
+`FontString:SetText()` has `SecretArguments = "AllowedWhenTainted"` at the engine level. This means it natively accepts and correctly renders secret values. You can pass secret return values directly from APIs like `GetAuraApplicationDisplayCount()` to `SetText()` without any conversion or unwrapping.
+
+```lua
+-- CORRECT: Pass secret value directly to SetText
+local stackStr = C_UnitAuras.GetAuraApplicationDisplayCount(unitid, auraInstanceID, 2, 1000)
+fontString:SetText(stackStr)  -- Works even if stackStr is a secret value
+
+-- CORRECT: Any secret string can be displayed this way
+local unitName = UnitName("target")  -- May be secret during combat
+nameText:SetText(unitName)           -- Engine renders it correctly
+
+-- WRONG: Don't try to unwrap/convert secret values for display
+local stackStr = C_UnitAuras.GetAuraApplicationDisplayCount(unitid, auraInstanceID, 2, 1000)
+local num = tonumber(stackStr)  -- ERROR: can't convert secret to number
+if stackStr ~= "" then          -- ERROR: can't compare secret with string
+    fontString:SetText(stackStr)
+end
+
+-- WRONG: Don't use SafeValue() or tostring() on secrets for SetText
+-- SetText already handles them natively at the C++ level
+```
 
 ### StatusBar Frames
 
@@ -698,16 +812,35 @@ healthBar:SetTimerDuration(durationObject)         -- Works with secret duration
 
 ### StatusBar:SetTimerDuration() (NEW in 12.0.0)
 
-For cast bars and cooldown displays, use `SetTimerDuration()` with duration objects:
+For cast bars and cooldown displays, use `SetTimerDuration()` with duration objects. This method provides **smooth frame-by-frame animation at the C++ level** -- no Lua `OnUpdate` script is needed for the bar fill. The engine interpolates the bar position every render frame, producing perfectly smooth animation that is impossible to match with Lua-driven `OnUpdate` + `SetValue()`.
+
+This is the **preferred method for cast bars on 12.0.0+** because:
+1. The engine handles all timing interpolation internally
+2. No floating-point precision issues (see StatusBar precision warning below)
+3. Works with secret duration objects from combat APIs
+4. Zero Lua overhead for the animation itself
+
 ```lua
 -- UnitCastingDuration/UnitChannelDuration return secret-safe duration objects
 local duration = UnitCastingDuration(unit)
 castBar:SetTimerDuration(duration)
+-- That's it! The bar animates smoothly with no OnUpdate needed.
 
 -- Duration objects have methods that work with secret values:
 local total = duration:GetTotalDuration()      -- May be secret
 local remaining = duration:GetRemainingDuration()  -- May be secret
 local isZero = duration:IsZero()               -- Boolean, safe to use
+
+-- Duration direction matters:
+-- UnitCastingDuration() returns a forward-filling duration (ElapsedTime)
+-- UnitChannelDuration() returns a reverse-filling duration (RemainingTime)
+-- Both start Immediately when passed to SetTimerDuration()
+
+-- Compare with manual Lua OnUpdate approach (more complex, less smooth):
+-- castBar:SetMinMaxValues(0, durationSec)
+-- castBar:SetScript("OnUpdate", function()
+--     castBar:SetValue(GetTime() - startTime)  -- Requires careful float handling
+-- end)
 ```
 
 ### Frame:SetAlphaFromBoolean() (NEW in 12.0.0)
@@ -770,10 +903,25 @@ statusBar:SetValue(UnitHealth(unit))
 -- GetAuraDuration returns a secret-safe duration object
 local duration = C_UnitAuras.GetAuraDuration(unit, auraInstanceID)
 
--- GetAuraApplicationDisplayCount returns a formatted string (secret-safe)
--- Parameters: unit, auraInstanceID, minApplications, maxApplications
+-- GetAuraApplicationDisplayCount returns a SECRET STRING during combat
+-- Parameters: unit, auraInstanceID, minDisplayCount, maxDisplayCount
 local displayCount = C_UnitAuras.GetAuraApplicationDisplayCount(unit, auraInstanceID, 2, 1000)
--- Returns: "", "2", "3", etc. as a string ready for display
+-- Returns "" for stacks < minDisplayCount, or the stack count as a string
+-- IMPORTANT: During combat this is a SECRET string, not a plain Lua string!
+-- "Secret-safe" means it's safe to pass to SetText(), NOT safe for Lua string operations.
+
+-- CORRECT: Pass directly to SetText (engine handles secrets)
+fontString:SetText(displayCount)
+
+-- WRONG: Do not use Lua operations on the return value
+if displayCount ~= "" then ... end   -- ERROR if secret
+local n = tonumber(displayCount)      -- ERROR if secret
+string.find(displayCount, "%d")       -- ERROR if secret
+
+-- The API already handles the "> 1 stack" check via minDisplayCount parameter.
+-- If stacks < minDisplayCount, it returns "" (empty string, non-secret).
+-- If stacks >= minDisplayCount, it returns the count string (may be secret).
+-- So you never need to do a numeric comparison like `if stacks > 1`.
 ```
 
 ### C_Spell.GetSpellCooldownDuration() (NEW in 12.0.0)
@@ -786,6 +934,33 @@ local duration = C_Spell.GetSpellCooldownDuration(spellID)
 duration:GetTotalDuration()      -- Total cooldown length
 duration:GetRemainingDuration()  -- Time remaining
 duration:IsZero()                -- Boolean: is cooldown ready?
+```
+
+### SetCooldownFromDurationObject and SetUseAuraDisplayTime
+
+**IMPORTANT:** Do NOT call `SetUseAuraDisplayTime(true)` when using `SetCooldownFromDurationObject()`. `SetCooldownFromDurationObject` already handles aura-style display timing internally. Combining both causes the countdown text to display **1 second LESS** than expected (e.g., showing "4" when there are 5 seconds remaining).
+
+| Method | SetUseAuraDisplayTime? | Why |
+|--------|----------------------|-----|
+| `SetCooldownFromDurationObject(durationObj)` | **NO** -- Do NOT set it | Timing handled internally by the duration object |
+| `SetCooldown(start, duration)` for **auras** | **YES** -- Set to `true` | Adjusts floor-to-ceil rounding so "5s" shows as "5" not "4" |
+| `SetCooldown(start, duration)` for **cooldowns** | **NO** -- Do NOT set it | Floor rounding is correct for ability cooldowns |
+
+```lua
+-- CORRECT: Aura cooldown with duration object (Platynator pattern)
+local duration = C_UnitAuras.GetAuraDuration(unit, auraInstanceID)
+cooldown:SetCooldownFromDurationObject(duration)
+-- Do NOT call cooldown:SetUseAuraDisplayTime(true) here!
+
+-- CORRECT: Aura cooldown with SetCooldown (Blizzard nameplate pattern)
+local expirationTime = auraData.expirationTime
+local auraDuration = auraData.duration
+cooldown:SetUseAuraDisplayTime(true)
+cooldown:SetCooldown(expirationTime - auraDuration, auraDuration)
+
+-- WRONG: Combining both (countdown shows 1 second less than expected)
+cooldown:SetUseAuraDisplayTime(true)  -- Don't do this with duration objects!
+cooldown:SetCooldownFromDurationObject(duration)
 ```
 
 ---
@@ -1137,7 +1312,8 @@ function addonTable.Display.AurasManagerMixin:FullRefresh()
         if self.buffsDetails then
             local all = C_UnitAuras.GetUnitAuras(self.unit, self.buffFilter, nil, self.buffSort, self.buffOrder)
             for _, aura in ipairs(all) do
-                -- GetAuraApplicationDisplayCount returns formatted string (secret-safe)
+                -- GetAuraApplicationDisplayCount returns a secret string during combat.
+                -- Pass directly to SetText() — do NOT use Lua string/number ops on it.
                 aura.applicationsString = C_UnitAuras.GetAuraApplicationDisplayCount(
                     self.unit, aura.auraInstanceID, 2, 1000
                 )
@@ -1314,6 +1490,6 @@ end
 
 ---
 
-*Last Updated: 2026-01-28*
+*Last Updated: 2026-02-01*
 *WoW Version: 12.0.0 (Midnight)*
-*Added comprehensive Platynator patterns including CreateUnitHealPredictionCalculator, SetTimerDuration, C_UnitAuras secret-safe functions, and nameplate SetAlpha(0) pattern*
+*Added: Core principle for passing secrets to engine APIs, FontString:SetText() secret support, UnitIsUnit/UnitName/UnitGUID secret documentation, GetAuraApplicationDisplayCount clarification, SetCooldownFromDurationObject/SetUseAuraDisplayTime interaction warning, SetTimerDuration smooth animation details, StatusBar float precision warning*
