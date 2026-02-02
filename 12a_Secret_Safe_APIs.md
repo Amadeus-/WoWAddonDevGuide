@@ -859,9 +859,21 @@ local alpha = C_CurveUtil.EvaluateColorValueFromBoolean(notInterruptible, 0, 1)
 frame:SetAlphaFromBoolean(condition, 0, alpha)
 ```
 
-### FontString:SetFormattedText()
+### FontString:SetFormattedText() with Secret Values
 
-May work with secrets in some contexts when the StatusBar owns the FontString.
+`FontString:SetFormattedText(formatString, ...)` definitively accepts secret values as format arguments from tainted addon code. The format string itself must be a regular Lua string (not secret), but `%s` arguments can be secret values. The C++ implementation handles the substitution internally.
+
+This is extremely useful for wrapping secret strings in formatting without Lua concatenation:
+
+```lua
+-- Wrap a secret player name in parentheses
+fontString:SetFormattedText("(%s)", secretName)  -- Displays: (PlayerName)
+
+-- Prefix with static text
+fontString:SetFormattedText("Interrupted by %s", secretName)  -- Displays: Interrupted by PlayerName
+```
+
+**Note:** This only works when the entire FontString can be one color. For mixed-color display (e.g., white "Interrupted" + class-colored name), use the Two-FontString Inline Pattern (see Common Patterns below).
 
 ### SetAlpha on Frames
 
@@ -1087,6 +1099,75 @@ local function SafeIsSecretValue(value)
         return issecretvalue(value)
     end
     return false  -- Pre-12.0, no secrets
+end
+```
+
+### Pattern 7: Two-FontString Inline Display (Mixed-Color Secret Text)
+
+When you need to display text with mixed colors and part of the text is a secret value, you cannot use color escape codes (which require Lua concatenation). Instead, use two adjacent FontStrings anchored inline:
+
+```lua
+-- Create two FontStrings on the same parent
+local staticText = parent:CreateFontString(nil, "OVERLAY")
+local secretText = parent:CreateFontString(nil, "OVERLAY")
+
+-- Position: staticText at desired location, secretText immediately to its right
+staticText:SetPoint("LEFT", parent, "LEFT", 2, 0)
+secretText:SetPoint("LEFT", staticText, "RIGHT", 0, 0)
+
+-- CRITICAL: Set staticText width to 0 so it auto-sizes to text content.
+-- Otherwise its RIGHT anchor may be at a theme-set width boundary, not the text edge.
+staticText:SetWidth(0)
+
+-- Set text and colors independently
+staticText:SetText("Interrupted ")
+staticText:SetTextColor(1, 1, 1)  -- White
+
+secretText:SetFormattedText("(%s)", secretName)  -- Wraps secret in parens at C++ level
+secretText:SetTextColor(C_ClassColor.GetClassColor(engClass):GetRGB())  -- Class color
+```
+
+This creates the visual appearance of a single line: "Interrupted (PlayerName)" with the name in class color.
+
+**Key requirements:**
+- `SetWidth(0)` on the first FontString so its RIGHT edge matches the text edge (see `03_UI_Framework.md` - FontString Width and Anchoring)
+- Use `SetFormattedText("(%s)", secret)` to add formatting around secret values without Lua concatenation
+- Match fonts between FontStrings with `secretText:SetFont(staticText:GetFont())`
+
+### UNIT_SPELLCAST_INTERRUPTED vs UNIT_SPELLCAST_FAILED: Different Payloads
+
+These two events are commonly handled together since both indicate a cast ending prematurely. However, their 4th argument differs:
+
+| Event | Args 1-3 | 4th Arg |
+|-------|----------|---------|
+| `UNIT_SPELLCAST_INTERRUPTED` | `unit, castGUID, spellID` | `interruptedByGUID` (string, possibly secret) |
+| `UNIT_SPELLCAST_FAILED` | `unit, castGUID, spellID` | *None* (nil) |
+
+If your handler passes the 4th arg to `UnitNameFromGUID()` or `GetPlayerInfoByGUID()`, it will harmlessly return nil for FAILED events, but the logic is semantically wrong. Best practice: handle these as separate event branches, or check the event name before treating the 4th arg as a GUID.
+
+```lua
+-- Good: Separate handlers
+if event == "UNIT_SPELLCAST_INTERRUPTED" then
+    local interruptedBy = select(4, ...)
+    HandleInterrupt(unit, interruptedBy)
+elseif event == "UNIT_SPELLCAST_FAILED" then
+    HandleInterrupt(unit, nil)  -- No GUID available
+end
+```
+
+### interruptedBy GUID Availability Scope
+
+The `interruptedBy` GUID from `UNIT_SPELLCAST_INTERRUPTED` is **only populated for interrupts by the player, group members, or raid members**. If an NPC or enemy player outside the group/raid interrupts a cast, the 4th argument is `nil`.
+
+This is a WoW API restriction, not a secret value issue. The GUID is restricted by `SecretWhenUnitSpellCastRestricted`, meaning it becomes secret during combat for group/raid members, and is entirely absent for outsiders.
+
+Addons displaying interrupter information must have a fallback:
+
+```lua
+if interruptName then
+    -- Display "Interrupted (PlayerName)" with class color
+else
+    -- Display just "Interrupted" -- no name available
 end
 ```
 

@@ -489,6 +489,25 @@ BOTTOMLEFT --- BOTTOM --- BOTTOMRIGHT
 
 **Source:** `Blizzard_SharedXML\HybridScrollFrame.xml`
 
+### FontString Width and Anchoring
+
+When a FontString has a fixed width set (via `SetWidth()` or from a style/theme system), its RIGHT anchor point is at the **width boundary**, not at the rendered text edge. For example, a FontString with `SetWidth(200)` displaying "Hello" will have its RIGHT anchor 200 pixels from the LEFT, not at the end of "Hello".
+
+This matters when anchoring another element to `relativePoint="RIGHT"` of a FontString:
+
+```lua
+-- Problem: label has width=200 from theme, text is only 60px wide
+label:SetText("Status: ")
+value:SetPoint("LEFT", label, "RIGHT", 0, 0)  -- value appears 200px away, not adjacent!
+
+-- Solution: SetWidth(0) makes FontString auto-size to text content
+label:SetWidth(0)
+label:SetText("Status: ")
+value:SetPoint("LEFT", label, "RIGHT", 0, 0)  -- value appears immediately after text
+```
+
+**Important:** If the FontString's width is managed by a style/theme system, remember to restore the original width when the temporary display ends (e.g., `fontString:SetWidth(style.width or 128)`).
+
 ---
 
 ## New Widget Methods (11.1.5 - 12.0.0)
@@ -640,6 +659,21 @@ function MyFontStringMixin:OnColorsUpdated()
     self:UpdateTextColor()
 end
 ```
+
+### Dynamic Font Matching Between FontStrings
+
+When creating a secondary FontString that must visually match an existing FontString whose font is controlled by a theme/style system, use `GetFont()` to copy the font at runtime:
+
+```lua
+-- Copy font face, size, and flags from source to target
+targetFontString:SetFont(sourceFontString:GetFont())
+```
+
+`GetFont()` returns three values: `fontPath, fontSize, fontFlags`. This is more robust than hardcoding a font because it automatically adapts when the user switches themes.
+
+**Practical use case:** Creating helper FontStrings (like interrupter names next to spell text on a cast bar) that must match whatever font the active theme applies.
+
+**Tip:** Also set a fallback font at creation time with `SetFontObject("GameFontNormal")` so the FontString has a valid font before the dynamic match runs. Calling `SetText()` on a FontString with no font set will error.
 
 ### StatusBar Methods
 
