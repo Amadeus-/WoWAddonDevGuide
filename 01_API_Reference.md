@@ -82,8 +82,11 @@ UnitAffectingCombat("unit")         -- Check if in combat
 UnitIsLieutenant("unit")            -- Check if unit is a lieutenant (12.0.0)
 UnitIsMinion("unit")                -- Check if unit is a minion (12.0.0)
 UnitCreatureID("unit")              -- Get creature ID directly (12.0.0)
-UnitBuff("unit", index or "name")   -- Get buff information
-UnitDebuff("unit", index or "name") -- Get debuff information
+UnitBuff("unit", index or "name")   -- DEPRECATED 10.2.5; use C_UnitAuras
+UnitDebuff("unit", index or "name") -- DEPRECATED 10.2.5; use C_UnitAuras
+-- NOTE: In 12.0.0+, ALL aura data fields are SECRET during combat except auraInstanceID.
+-- C_UnitAuras.GetUnitAuraBySpellID() and AuraUtil.FindAuraByName() return nil during combat.
+-- See 12a_Secret_Safe_APIs.md for full aura secret values documentation.
 UnitGetTotalAbsorbs("unit")         -- Get absorb shield total (SECRET in combat - 12.0.0)
 UnitGetTotalHealAbsorbs("unit")     -- Get heal absorb total (12.0.0)
 UnitGetIncomingHeals("unit", healer)-- Get incoming heals (SECRET in combat - 12.0.0)
@@ -91,7 +94,7 @@ UnitGetIncomingHeals("unit", healer)-- Get incoming heals (SECRET in combat - 12
 
 **Secret Values in Unit APIs (12.0.0 - CRITICAL):**
 
-In WoW 12.0.0, the following Unit APIs return **secret values** during combat:
+In WoW 12.0.0, the following Unit APIs return **secret values** during ANY combat (open world, dungeons, raids, PvP, all combat contexts):
 - `UnitHealth()`, `UnitHealthMax()`
 - `UnitPower()`, `UnitPowerMax()`
 - `UnitGetTotalAbsorbs()`, `UnitGetIncomingHeals()`
@@ -194,7 +197,7 @@ PickupContainerItem(bagID, slotIndex)
 
 **C_Spell Namespace**:
 ```lua
-C_Spell.GetSpellInfo(spellID)
+C_Spell.GetSpellInfo(spellID)        -- ONLY accepts numeric spell IDs (not names) in 12.0.0+
 C_Spell.IsSpellInRange(spellID, "unit")
 C_Spell.GetSpellCooldown(spellID)
 C_Spell.DoesSpellExist(spellID)
@@ -225,13 +228,14 @@ C_SpellDiminish.GetDiminishingReturnsForSpell(spellID)
 C_SpellDiminish.GetDiminishingCategory(spellID)
 ```
 
-**Global Functions**:
+**Global Functions** (REMOVED in 11.0.0 -- use C_Spell namespace instead):
 ```lua
-GetSpellInfo(spellID or "spellName" or spellIndex, "bookType")
-    -- Returns: name, rank, icon, castTime, minRange, maxRange, spellID, originalIcon
+-- REMOVED: GetSpellInfo(spellID or "spellName" or spellIndex, "bookType")
+--   Use C_Spell.GetSpellInfo(spellID) or C_Spell.GetSpellName(spellID) instead
+--   NOTE: C_Spell functions ONLY accept numeric spell IDs in 12.0.0+ (not spell names)
 
-GetSpellCooldown(spellID or "spellName")
-    -- Returns: start, duration, enabled, modRate
+-- REMOVED: GetSpellCooldown(spellID or "spellName")
+--   Use C_Spell.GetSpellCooldown(spellID) instead
 
 -- DEPRECATED in 11.2.0: Use C_SpellBook.IsSpellKnown() instead
 IsSpellKnown(spellID)
@@ -588,11 +592,11 @@ C_ColorUtil.ConvertToHexString(r, g, b)
 
 ## Secret Values System
 
-New in 12.0.0, WoW introduces a "secret values" system that protects sensitive combat data from unauthorized addon access. This is part of Blizzard's ongoing effort to prevent automation and botting.
+New in 12.0.0, WoW introduces a "secret values" system that protects sensitive combat data from unauthorized addon access during **ANY combat context** (open-world combat, dungeons, raids, mythic+, PvP, battlegrounds, arenas, world bosses — all combat). This is part of Blizzard's ongoing effort to prevent automation and botting.
 
 ### What Are Secret Values?
 
-Secret values are wrapped data that cannot be directly read or manipulated by addon code. They're used for sensitive combat-related information that could be exploited for automation.
+Secret values are wrapped data that cannot be directly read or manipulated by addon code. They're used for sensitive combat-related information that could be exploited for automation. **Secret values are active during ALL combat contexts, not just instanced content.**
 
 ### Built-in Functions
 
@@ -617,29 +621,29 @@ scrubsecretvalues(table)
 ### How Secrets Affect Addons
 
 ```lua
--- Example: Accessing unit health in different contexts
-local function OnCombatLogEvent()
+-- Example: Accessing unit health during ANY combat
+local function UpdateHealthDisplay()
     local health = UnitHealth("target")
 
-    -- In some contexts, health may be a secret value
+    -- health is a secret value whenever the player is in combat (any combat context)
     if issecretvalue(health) then
-        -- Cannot directly use this value for automation
-        -- Can only pass it to secure functions
-        print("Health is protected")
+        -- During combat: cannot use for arithmetic, comparisons, or concatenation
+        -- Use alternative approaches like percentage APIs or defer processing
+        return
     else
-        -- Normal usage
+        -- Out of combat: normal usage allowed
         print("Target health: " .. health)
     end
 end
 ```
 
-### Restrictions for Tainted Code
+### When Secrets Apply: During ANY Combat
 
-When code is "tainted" (execution started from insecure addon code), certain values become secrets:
+When a player is in ANY combat (not limited to instanced content), tainted addon code returns secret values for:
 
-1. **Combat-related values**: Target health, power, position in certain contexts
-2. **Action state**: Whether actions can be used, cooldown states
-3. **Unit targeting information**: Precise unit positions, facing angles
+1. **Unit health/power data**: `UnitHealth()`, `UnitHealthMax()`, `UnitPower()`, `UnitPowerMax()`, `UnitGetTotalAbsorbs()`, `UnitGetIncomingHeals()` — all return secrets during combat anywhere (open-world, dungeons, raids, PvP)
+2. **Action bar state**: `C_ActionBar.GetActionInfo()` and related functions may return secret values during combat
+3. **Aura data**: All aura data fields except `auraInstanceID` are secret during combat (not just instanced combat)
 
 ### Working with Secrets
 

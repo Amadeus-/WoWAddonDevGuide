@@ -1,6 +1,40 @@
 <\!-- CLAUDE_SKIP_START -->
 # WoW Addon Development Knowledge Base - Update Log
 
+## Version 2.6 - 2026-02-05
+
+### Aura Data Secret Values & C_Spell Name Lookup Removal (12.0.0)
+
+**Summary:**
+Added comprehensive documentation of aura data behavior under the secret values system in WoW 12.0.0, based on extensive in-game testing. Also documented the removal of spell-name-based lookups from `C_Spell.GetSpellInfo()`.
+
+**Files Updated:**
+- `12a_Secret_Safe_APIs.md` - Major new section "Aura Data Secret Values (12.0.0 - CRITICAL)" with field-by-field secret status table, API-by-API behavior documentation, caching limitations analysis, and practical implications table. Also added "C_Spell.GetSpellInfo() No Longer Accepts Spell Names" section. Expanded migration checklist with aura-specific items.
+- `12_API_Migration_Guide.md` - Updated "Example 3: Aura Tracking" to cover 12.0.0 secret values impact with code examples. Added spell-name-lookup removal notes to C_Spell section.
+- `01_API_Reference.md` - Fixed outdated `GetSpellInfo` entry that listed spell names as valid input. Added aura secret values note to Unit APIs section. Marked old global functions as REMOVED.
+
+**Key Findings Documented:**
+
+1. **ALL aura data fields are SECRET during combat except `auraInstanceID`** -- name, spellId, icon, duration, expirationTime, sourceUnit, dispelName, isHarmful, isHelpful, isFromPlayerOrPlayerPet, applications, timeMod, points are all secret.
+
+2. **Secret values affect ALL combat contexts** -- open world, dungeons, raids, M+, PvP. Not limited to instanced content.
+
+3. **Every aura query method is affected:**
+   - `C_UnitAuras.GetUnitAuras()` -- fields secret
+   - `C_UnitAuras.GetAuraDataByAuraInstanceID()` -- fields secret
+   - `C_UnitAuras.GetUnitAuraBySpellID()` -- returns nil
+   - `C_UnitAuras.GetAuraDataBySpellName()` -- returns nil
+   - `AuraUtil.FindAuraByName()` -- returns nil
+   - `UNIT_AURA` event `addedAuras` payload -- spellId/name secret at moment of application
+
+4. **Pre-combat caching does NOT work** because new auras get new auraInstanceIDs with secret spellId values, and there is no non-secret window during combat.
+
+5. **`C_Spell.GetSpellInfo("SpellName")` returns nil in 12.0.0** -- only numeric spell IDs accepted.
+
+6. **API-level filter strings still work** (`HELPFUL|PLAYER`, `INCLUDE_NAME_PLATE_ONLY|HARMFUL`) because filtering is done at the C++ level.
+
+---
+
 ## Version 2.5 - 2026-01-28
 
 ### Comprehensive Secret-Safe API Documentation (12.0.0+)

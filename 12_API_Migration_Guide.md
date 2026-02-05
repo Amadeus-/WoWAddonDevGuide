@@ -1682,9 +1682,14 @@ GetSpellCooldown(spellID)  -- Use C_Spell.GetSpellCooldown()
 #### New/Changed APIs
 ```lua
 -- NEW: C_Spell namespace (11.0.0)
-C_Spell.GetSpellInfo(spellID)  -- Returns table
-C_Spell.GetSpellName(spellID)  -- Returns name only
+C_Spell.GetSpellInfo(spellID)  -- Returns table; ONLY accepts numeric spell IDs
+C_Spell.GetSpellName(spellID)  -- Returns name only; ONLY accepts numeric spell IDs
 C_Spell.GetSpellCooldown(spellID)  -- Returns table
+
+-- IMPORTANT (12.0.0): C_Spell.GetSpellInfo() does NOT accept spell name strings!
+C_Spell.GetSpellInfo(8921)        -- WORKS: returns spell info for Moonfire
+C_Spell.GetSpellInfo("Moonfire")  -- RETURNS NIL in 12.0.0 (no spell name lookup)
+C_Spell.GetSpellName("Moonfire")  -- RETURNS NIL in 12.0.0
 
 -- Example return values:
 local spellInfo = C_Spell.GetSpellInfo(spellID)
@@ -2195,17 +2200,17 @@ local GetItemID = C_Container and C_Container.GetContainerItemID
 local numSlots = GetNumSlots(bagID)
 ```
 
-### Example 3: Aura Tracking (10.2 → 11.0)
+### Example 3: Aura Tracking (10.2 → 11.0 → 12.0)
 
-**Issue:** `UnitAura()` deprecated in 10.2.5
+**Issue:** `UnitAura()` deprecated in 10.2.5; aura data fields are SECRET during combat in 12.0.0+
 
-**Before (Old):**
+**Before (Old - 10.x):**
 ```lua
 local name, icon, count, debuffType, duration, expirationTime =
     UnitAura("player", i, "HELPFUL")
 ```
 
-**After (New):**
+**After (11.0):**
 ```lua
 local auraData = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
 if auraData then
@@ -2218,7 +2223,31 @@ if auraData then
 end
 ```
 
-**Compatibility Solution:**
+**CRITICAL 12.0.0 Limitation:** In 12.0.0+, ALL aura data fields are **SECRET** during combat except `auraInstanceID`. This means:
+- `auraData.name`, `auraData.spellId`, `auraData.icon`, `auraData.duration`, etc. cannot be used in Lua comparisons, arithmetic, or string operations during combat
+- `C_UnitAuras.GetUnitAuraBySpellID()` returns **nil** during combat
+- `C_UnitAuras.GetAuraDataBySpellName()` returns **nil** during combat
+- `AuraUtil.FindAuraByName()` returns **nil** during combat
+- Pre-combat caching does NOT work because new auras applied during combat have new auraInstanceIDs with secret spellId values
+- API-level filter strings (`HELPFUL|PLAYER`, `INCLUDE_NAME_PLATE_ONLY|HARMFUL`) still work because they are processed at the C++ level
+
+> **See [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md#aura-data-secret-values-120---critical) for comprehensive aura secret values documentation.**
+
+**12.0.0 Aura Display Pattern (using secret-safe APIs):**
+```lua
+-- Use API-level filters instead of Lua-side filtering
+local auras = C_UnitAuras.GetUnitAuras(unit, "HARMFUL|PLAYER")
+for _, aura in ipairs(auras) do
+    -- Use secret-safe display APIs
+    local duration = C_UnitAuras.GetAuraDuration(unit, aura.auraInstanceID)
+    cooldown:SetCooldownFromDurationObject(duration)
+
+    local stackText = C_UnitAuras.GetAuraApplicationDisplayCount(unit, aura.auraInstanceID, 2, 1000)
+    stackFontString:SetText(stackText)  -- Engine handles secret strings
+end
+```
+
+**Compatibility Solution (pre-12.0):**
 ```lua
 local function GetAuraInfo(unit, index, filter)
     -- Try new API first (10.2.5+)

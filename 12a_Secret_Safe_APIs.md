@@ -25,6 +25,8 @@ WoW 12.0.0 (Midnight) introduced the **Secret Values** system as part of Blizzar
 
 **Key Concept:** Secret values are special Lua values that LOOK normal but CANNOT be used in arithmetic, comparisons, concatenations, or most other operations when called from tainted (addon) code.
 
+**Scope:** Secret values are active during **ALL combat contexts**, including open-world combat, not just instanced content (dungeons, raids, Mythic+, PvP). Any time a player is in combat anywhere in the game, affected APIs return secret values.
+
 ```lua
 -- Example: UnitHealth() during combat
 local health = UnitHealth("target")  -- Returns a secret value
@@ -909,6 +911,157 @@ statusBar:SetMinMaxValues(0, maxHealth)
 statusBar:SetValue(UnitHealth(unit))
 ```
 
+### Aura Data Secret Values (12.0.0 - CRITICAL)
+
+**Secret values affect ALL combat contexts, including open world.** This is NOT limited to instanced content (dungeons, raids, M+, PvP). Any time a player is in combat anywhere in the game, aura data is secret.
+
+#### What Is Secret vs. Non-Secret
+
+During combat, virtually ALL aura data fields are secret. The ONLY non-secret field is `auraInstanceID`.
+
+| Aura Data Field | Secret During Combat? | Notes |
+|-----------------|----------------------|-------|
+| `auraInstanceID` | **NO** | The ONLY non-secret field |
+| `name` | **YES** | Cannot filter/compare by name |
+| `spellId` | **YES** | Cannot filter/compare by spell ID |
+| `icon` | **YES** | Cannot use for custom icon logic |
+| `duration` | **YES** | Cannot do arithmetic |
+| `expirationTime` | **YES** | Cannot calculate remaining time |
+| `sourceUnit` | **YES** | Cannot identify caster |
+| `dispelName` | **YES** | Cannot filter by dispel type |
+| `isHarmful` | **YES** | Cannot distinguish buff/debuff |
+| `isHelpful` | **YES** | Cannot distinguish buff/debuff |
+| `isFromPlayerOrPlayerPet` | **YES** | Cannot filter "my" auras via data |
+| `applications` (stacks) | **YES** | Cannot read stack count |
+| `timeMod` | **YES** | Cannot read time modification |
+| `points` | **YES** | Cannot read aura values |
+
+#### All Aura APIs Return Secret Data During Combat
+
+Every method of querying aura data is affected:
+
+```lua
+-- ALL of these return secret data during combat (except auraInstanceID):
+
+-- Method 1: GetUnitAuras (bulk query)
+local auras = C_UnitAuras.GetUnitAuras(unit, filter)
+for _, aura in ipairs(auras) do
+    -- aura.auraInstanceID  -- NON-SECRET (usable)
+    -- aura.name            -- SECRET (unusable for comparisons)
+    -- aura.spellId         -- SECRET (unusable for comparisons)
+    -- aura.icon            -- SECRET
+    -- aura.duration        -- SECRET
+    -- All other fields     -- SECRET
+end
+
+-- Method 2: GetAuraDataByAuraInstanceID (single aura lookup)
+local aura = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, instanceID)
+-- Same result: all fields secret except auraInstanceID
+
+-- Method 3: GetUnitAuraBySpellID (spell ID lookup)
+local aura = C_UnitAuras.GetUnitAuraBySpellID(unit, spellID)
+-- Returns NIL during combat (not secret data, just nil!)
+
+-- Method 4: GetAuraDataBySpellName (name lookup)
+local aura = C_UnitAuras.GetAuraDataBySpellName(unit, "Moonfire")
+-- Returns NIL during combat
+
+-- Method 5: AuraUtil.FindAuraByName (helper)
+local aura = AuraUtil.FindAuraByName("Moonfire", unit)
+-- Returns NIL during combat
+
+-- Method 6: UNIT_AURA event payload
+-- The addedAuras table in UNIT_AURA events also has secret fields
+-- spellId and name are secret even at the moment of FIRST APPLICATION
+```
+
+#### auraInstanceIDs Are Per-Instance, Not Per-Spell
+
+Each individual aura application gets a unique `auraInstanceID`. The same spell on different targets has different IDs:
+
+```lua
+-- Blood Plague on Mob A: auraInstanceID = 12345
+-- Blood Plague on Mob B: auraInstanceID = 67890
+-- These are DIFFERENT IDs - cannot be used as spell identifiers
+```
+
+#### Out of Combat: All Data Is Readable
+
+When the player is NOT in combat, all aura data is fully readable and non-secret:
+
+```lua
+-- Out of combat: everything works normally
+local aura = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, instanceID)
+if aura then
+    print(aura.name)     -- Works: "Moonfire"
+    print(aura.spellId)  -- Works: 8921
+    print(aura.duration) -- Works: 18
+end
+```
+
+#### Why Pre-Combat Caching Does NOT Work
+
+A natural instinct is to cache aura data before entering combat. This fails because:
+
+1. **New auras applied during combat get new auraInstanceIDs** that were never seen out of combat
+2. **There is no "window" where data is non-secret during combat** -- data is secret from the moment of application (the `addedAuras` payload in `UNIT_AURA` events contains secret spellId and name fields)
+3. **Spell name to spell ID resolution does not work** -- `C_Spell.GetSpellInfo("Moonfire")` returns nil in 12.0 (see below)
+
+```lua
+-- THIS CACHING APPROACH DOES NOT WORK:
+local auraCache = {}  -- spellId -> data
+
+-- Cache before combat
+local function CacheAuras(unit)
+    local auras = C_UnitAuras.GetUnitAuras(unit, "HELPFUL")
+    for _, aura in ipairs(auras) do
+        auraCache[aura.spellId] = { name = aura.name, icon = aura.icon }
+    end
+end
+
+-- Problem: During combat, new auras appear with new auraInstanceIDs.
+-- Their spellId is SECRET, so we can't look them up in the cache.
+-- Even the UNIT_AURA addedAuras payload has secret spellId values.
+```
+
+#### What Still Works During Combat
+
+Despite the restrictions, some approaches still function:
+
+```lua
+-- 1. API-level filter strings still work
+-- These are processed at the C++ level before data reaches Lua
+local auras = C_UnitAuras.GetUnitAuras(unit, "HELPFUL|PLAYER")
+-- Returns only the player's helpful auras (filtering done in C++)
+
+local auras = C_UnitAuras.GetUnitAuras(unit, "INCLUDE_NAME_PLATE_ONLY|HARMFUL")
+-- Returns only nameplate-relevant harmful auras
+
+-- 2. Secret-safe display APIs work (see sections below)
+local duration = C_UnitAuras.GetAuraDuration(unit, auraInstanceID)
+local displayCount = C_UnitAuras.GetAuraApplicationDisplayCount(unit, auraInstanceID, 2, 1000)
+
+-- 3. Blizzard's own UI code works because it runs in a privileged secure context
+-- Third-party addons do NOT have this privilege
+
+-- 4. issecretvalue() can detect secret values to avoid errors
+if issecretvalue and issecretvalue(aura.spellId) then
+    -- Handle gracefully
+end
+```
+
+#### Practical Implications for Addon Developers
+
+| Use Case | Status in 12.0 Combat | Alternative |
+|----------|----------------------|-------------|
+| Filter auras by spell name/ID | **IMPOSSIBLE** | Use API-level filter strings |
+| Show aura icons on nameplates | **Works** via C++ filter + secret-safe display | `INCLUDE_NAME_PLATE_ONLY` filter |
+| Custom aura priority lists | **IMPOSSIBLE** during combat | Pre-filter via API filter strings |
+| Track specific player debuffs | **IMPOSSIBLE** to identify by name/ID | Use `HARMFUL\|PLAYER` filter, display all |
+| Show aura duration countdown | **Works** via `C_UnitAuras.GetAuraDuration()` | Duration object + `SetCooldownFromDurationObject()` |
+| Show aura stack count | **Works** via `C_UnitAuras.GetAuraApplicationDisplayCount()` | Pass directly to `SetText()` |
+| Display aura tooltips | **Works** -- `GameTooltip:SetUnitAura()` handles secrets | Engine-level tooltip rendering |
+
 ### C_UnitAuras Secret-Safe Functions (NEW in 12.0.0)
 
 ```lua
@@ -935,6 +1088,22 @@ string.find(displayCount, "%d")       -- ERROR if secret
 -- If stacks >= minDisplayCount, it returns the count string (may be secret).
 -- So you never need to do a numeric comparison like `if stacks > 1`.
 ```
+
+### C_Spell.GetSpellInfo() No Longer Accepts Spell Names (12.0.0)
+
+In WoW 12.0.0, `C_Spell.GetSpellInfo()` and `C_Spell.GetSpellName()` **only accept numeric spell IDs**. Passing a spell name string returns nil:
+
+```lua
+-- WORKS in 12.0.0:
+C_Spell.GetSpellInfo(8921)          -- Returns spell info table for Moonfire
+C_Spell.GetSpellName(8921)         -- Returns "Moonfire"
+
+-- DOES NOT WORK in 12.0.0 (returns nil):
+C_Spell.GetSpellInfo("Moonfire")   -- Returns nil
+C_Spell.GetSpellName("Moonfire")   -- Returns nil
+```
+
+**Why this matters for aura tracking:** One workaround developers might attempt for the aura secret values problem is to look up spell IDs from cached spell names using `C_Spell.GetSpellInfo("SpellName")`. This approach fails because the API no longer accepts string inputs. Addon developers must use hardcoded numeric spell IDs for any spell-specific logic.
 
 ### C_Spell.GetSpellCooldownDuration() (NEW in 12.0.0)
 
@@ -1502,17 +1671,26 @@ end
 3. [ ] Replace arithmetic with `UnitHealthPercent`/`UnitPowerPercent` where possible
 4. [ ] Use native StatusBar frames for health/power display when possible
 5. [ ] Search for `C_ActionBar` usage and add secret guards
-6. [ ] Test with `secretCombatRestrictionsForced` CVar enabled
-7. [ ] Test in actual combat scenarios
-8. [ ] Add version checks for `issecretvalue` existence
+6. [ ] Search for aura filtering by `name`, `spellId`, or other data fields -- these CANNOT work during combat
+7. [ ] Replace `AuraUtil.FindAuraByName()` and `C_UnitAuras.GetUnitAuraBySpellID()` -- both return nil during combat
+8. [ ] Replace `C_Spell.GetSpellInfo("spellName")` with numeric spell ID lookups
+9. [ ] Use `C_UnitAuras.GetAuraDuration()` and `C_UnitAuras.GetAuraApplicationDisplayCount()` for aura display
+10. [ ] Use API-level filter strings (`HELPFUL|PLAYER`, `INCLUDE_NAME_PLATE_ONLY`) instead of Lua-side filtering
+11. [ ] Test with `secretCombatRestrictionsForced` CVar enabled
+12. [ ] Test in actual combat scenarios (including open world, not just instances)
+13. [ ] Add version checks for `issecretvalue` existence
 
 ### For New Addons
 
 1. [ ] Always check `issecretvalue` before operations on combat data
 2. [ ] Use `UnitHealthPercent`/`UnitPowerPercent` for custom bars
 3. [ ] Use native StatusBar for automatic secret handling
-4. [ ] Design UI to gracefully handle unavailable data
-5. [ ] Document which features may be limited during combat
+4. [ ] Do NOT attempt custom aura filtering by name/spellId during combat -- use API filter strings
+5. [ ] Use `C_UnitAuras.GetAuraDuration()` for aura cooldown display, not `auraData.duration`/`expirationTime`
+6. [ ] Use `C_UnitAuras.GetAuraApplicationDisplayCount()` for stack display, not `auraData.applications`
+7. [ ] Design UI to gracefully handle unavailable data
+8. [ ] Document which features may be limited during combat
+9. [ ] Use numeric spell IDs (not spell name strings) for all spell lookups
 
 ---
 
@@ -1571,6 +1749,6 @@ end
 
 ---
 
-*Last Updated: 2026-02-01*
+*Last Updated: 2026-02-05*
 *WoW Version: 12.0.0 (Midnight)*
-*Added: Core principle for passing secrets to engine APIs, FontString:SetText() secret support, UnitIsUnit/UnitName/UnitGUID secret documentation, GetAuraApplicationDisplayCount clarification, SetCooldownFromDurationObject/SetUseAuraDisplayTime interaction warning, SetTimerDuration smooth animation details, StatusBar float precision warning*
+*Added: Comprehensive aura data secret values documentation (all fields secret except auraInstanceID), C_Spell.GetSpellInfo spell-name-lookup removal, pre-combat caching limitations, practical implications table for aura addon developers*
