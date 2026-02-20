@@ -694,6 +694,7 @@ Several unit APIs return secret values during combat that cause errors if used d
 | `UnitName(unit)` | string | **Sometimes** | Cannot use as table key or in string ops |
 | `UnitClass(unit)` | string, string | **Sometimes** | Class token may be secret |
 | `UnitGUID(unit)` | string | **Sometimes** | Cannot use as table key |
+| `UnitDetailedThreatSituation(unit, mob)` | isTanking, status, scaledPercent, rawPercent, threatValue | **YES** | `scaledPercent`, `rawPercent`, `threatValue` are secret |
 
 **`UnitIsUnit()` is particularly dangerous** because its return value is commonly used in `if` conditions. Attempting a boolean test on a secret value causes: `"attempt to perform boolean test on a secret value"`.
 
@@ -769,6 +770,17 @@ local line = tooltipData.lines[2]
 if issecretvalue(line.leftText) then
     -- Cannot read tooltip text
 end
+```
+
+**Important:** Secret values in tooltip data can exist at the TABLE level, not just individual fields. `line.leftColor` can be a secret TABLE (not just secret `.r`, `.g`, `.b` fields), and `line.type` can also be secret. Always check the outermost container before indexing:
+
+```lua
+local color = line.leftColor
+if issecretvalue(color) then return end  -- Check the TABLE itself first
+-- Only then is it safe to access color.r, color.g, color.b
+
+local lineType = line.type
+if issecretvalue(lineType) then return end  -- Check before comparing
 ```
 
 ---
@@ -1302,6 +1314,20 @@ This creates the visual appearance of a single line: "Interrupted (PlayerName)" 
 - `SetWidth(0)` on the first FontString so its RIGHT edge matches the text edge (see `03_UI_Framework.md` - FontString Width and Anchoring)
 - Use `SetFormattedText("(%s)", secret)` to add formatting around secret values without Lua concatenation
 - Match fonts between FontStrings with `secretText:SetFont(staticText:GetFont())`
+
+### Pattern 8: Table-Level Secret Values
+
+Secret values can exist at ANY level -- the table itself, individual fields, or nested fields. Always check the outermost container first:
+
+```lua
+-- The color TABLE itself might be secret (not just color.r)
+local color = line.leftColor
+if issecretvalue(color) then return end  -- Check table before indexing
+if issecretvalue(color.r) then return end  -- Then check fields
+
+-- Common with tooltip data where entire structures can be tainted
+-- Also applies to any API that returns tables during combat
+```
 
 ### UNIT_SPELLCAST_INTERRUPTED vs UNIT_SPELLCAST_FAILED: Different Payloads
 

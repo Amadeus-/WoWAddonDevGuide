@@ -284,6 +284,54 @@ local function DebugNameplateHitTest(unit)
 end
 ```
 
+#### Additional Click Targeting Considerations
+
+##### EnableMouse(false) on Overlay Frames
+
+Custom nameplate addons that create frames on top of the Blizzard UnitFrame (e.g., health bars, cast bars, artwork) must ensure those frames don't intercept mouse clicks. If a custom frame has `EnableMouse(true)`, it will consume clicks before they reach Blizzard's `HitTestFrame`, breaking targeting.
+
+**Solution:** Set `EnableMouse(false)` on all custom frames that sit above the nameplate's UnitFrame:
+
+```lua
+-- Custom StatusBar frames must not intercept clicks
+myHealthBar:EnableMouse(false)
+myCastBar:EnableMouse(false)
+myArtworkFrame:EnableMouse(false)
+
+-- For frames that need hover detection but NOT click interception:
+frame:EnableMouse(true)
+frame:SetMouseClickEnabled(false)  -- Hover works, clicks pass through
+```
+
+##### SetNamePlateSize is GLOBAL
+
+`C_NamePlate.SetNamePlateSize(width, height)` applies to ALL nameplates, not just the targeted one. The Blizzard HitTestFrame is sized based on this value.
+
+**Key formula:** The effective clickable width is `SetNamePlateSize(W) - 4`, so to cover a visual element of width `V` with margin `M`:
+```lua
+W = V + (2 * M) + 4
+```
+
+**Important:** An oversized hitbox steals clicks from adjacent plates. Only include core visual elements (health bar, cast bar, borders) in the width calculation -- exclude text elements, indicators, and anything that extends beyond the main plate body.
+
+##### Debug Overlays for Click Testing
+
+Use `GetMouseFoci()` (replaces removed `GetMouseFocus()`) to track which frame receives mouse events. Color-coded semi-transparent overlays on the plate, UnitFrame, and carrier frames help visualize click regions during development.
+
+```lua
+-- Compatibility wrapper
+local GetMouseFocus = GetMouseFocus or function()
+    local mouseFoci = GetMouseFoci and GetMouseFoci()
+    return mouseFoci and mouseFoci[1] or nil
+end
+
+-- In OnUpdate, show which frame has mouse focus
+local focus = GetMouseFocus()
+if focus then
+    debugText:SetText(focus:GetDebugName())
+end
+```
+
 ---
 
 #### C_ActionBar Namespace (Replaces Global Action Bar Functions)
@@ -614,6 +662,54 @@ end
 
 **Why It Changed:**
 The new `GetMouseFoci()` returns ALL frames under the cursor (useful for overlapping frames), while the old API only returned one. The wrapper above returns just the first frame for backward compatibility.
+
+#### Cast Bar Changes in 12.0.0
+
+##### SetTimerDuration() for Smooth Cast Bars
+
+12.0.0 introduced `StatusBar:SetTimerDuration()` for C++-level smooth bar animation, eliminating the need for OnUpdate-driven fill calculations:
+
+```lua
+local duration = UnitCastingDuration(unitid) or UnitChannelDuration(unitid)
+castBar:SetTimerDuration(duration)
+-- That's it -- the bar animates smoothly with no OnUpdate needed.
+-- direction is implicit: UnitCastingDuration returns forward, UnitChannelDuration returns reverse
+```
+
+**Pre-12.0.0 gotcha:** Never pass raw epoch-millisecond timestamps (13-digit numbers) to `StatusBar:SetMinMaxValues()` / `SetValue()`. The internal float-precision `(value - min) / (max - min)` calculation loses precision with large numbers, causing visible stuttering. Instead, normalize to small ranges:
+
+```lua
+-- WRONG: raw millisecond timestamps cause stuttering
+castBar:SetMinMaxValues(startTime, endTime)  -- e.g., 1706745632123
+
+-- CORRECT: normalize to seconds
+local durationSec = (endTime - startTime) / 1000
+castBar:SetMinMaxValues(0, durationSec)
+```
+
+##### UNIT_SPELLCAST Event Order Change
+
+In 12.0.0, `UNIT_SPELLCAST_STOP` fires BEFORE `UNIT_SPELLCAST_INTERRUPTED` (reversed from pre-12.0). This means if you hide the cast bar on STOP, the interrupt handler never fires.
+
+**Solution:** Defer cast bar hiding by one frame:
+```lua
+-- On UNIT_SPELLCAST_STOP:
+C_Timer.After(0, function()
+    if not unit.interrupted then
+        HideCastBar(frame)
+    end
+end)
+```
+
+##### UNIT_SPELLCAST_INTERRUPTED Now Provides Source
+
+In 12.0.0, `UNIT_SPELLCAST_INTERRUPTED` provides `interruptedByGUID` as the 4th argument:
+```lua
+frame:RegisterUnitEvent("UNIT_SPELLCAST_INTERRUPTED", unitid)
+-- Handler receives: unitTarget, castGUID, spellID, interruptedByGUID
+local name = interruptedByGUID and UnitNameFromGUID(interruptedByGUID)
+```
+Note: Only shows names of group/raid members; outside-group interrupters return nil.
 
 #### Menu System Migration (UIDropDownMenu to MenuUtil)
 
@@ -1842,6 +1938,21 @@ local function GetSpellNameSafe(spellID)
     end
 end
 ```
+
+### Pattern 6: C_Timer.After(0) for Event Race Conditions
+
+When 12.0.0 changed event firing order (e.g., UNIT_SPELLCAST_STOP before UNIT_SPELLCAST_INTERRUPTED), defer actions by one frame to allow other handlers to fire:
+
+```lua
+C_Timer.After(0, function()
+    -- Now all related events for this frame have fired
+    if not someConditionSetByOtherHandler then
+        DoDefaultAction()
+    end
+end)
+```
+
+This pattern is useful whenever you depend on multiple events that fire in a specific sequence that may change between WoW versions.
 
 ---
 

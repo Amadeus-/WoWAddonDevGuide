@@ -257,6 +257,13 @@ function MyAddonMixin:PLAYER_LOGIN()
 end
 ```
 
+### Nameplate Addon Patterns
+- Use `SetAlpha(0)` (not `Hide()`) on Blizzard's UnitFrame to keep HitTestFrame active
+- Set `EnableMouse(false)` on custom overlay frames (health bars, cast bars, artwork)
+- `C_NamePlate.SetNamePlateSize()` is global -- calculate minimum needed width from theme elements
+- Re-register unit events on the hidden UnitFrame if your addon needs Blizzard infrastructure (e.g., AurasFrame)
+- `GetMouseFoci()` replaces removed `GetMouseFocus()` for debug overlays
+
 ## Secret Values Quick Reference (12.0.0+)
 
 **Detection Functions:**
@@ -295,6 +302,13 @@ end
 ```
 
 See `12a_Secret_Safe_APIs.md` for complete documentation.
+
+**Additional Practical Patterns:**
+- **Nameplate click targeting (12.0.0+):** Never `Hide()` the Blizzard UnitFrame -- use `SetAlpha(0)`. Set `EnableMouse(false)` on all custom overlay frames so clicks pass through to Blizzard's HitTestFrame. For hover-only frames, use `EnableMouse(true)` + `SetMouseClickEnabled(false)`
+- **Cast bar animation:** Use `StatusBar:SetTimerDuration()` on 12.0.0+ for smooth C++-level animation. On older clients, normalize timestamp ranges to small values (seconds, not epoch milliseconds) to avoid float precision loss
+- **Event race conditions:** Use `C_Timer.After(0, ...)` to defer by one frame when event firing order matters (e.g., UNIT_SPELLCAST_STOP fires before UNIT_SPELLCAST_INTERRUPTED in 12.0.0)
+- **Upvalue capture order:** Variables must be declared BEFORE any function that captures them as upvalues in a closure. A common bug is declaring a variable after the function definition, causing the upvalue to always be nil
+- **SetNamePlateSize is GLOBAL:** Applies to ALL nameplates, not per-plate. Oversized hitboxes steal clicks from adjacent plates
 
 ## Common Libraries
 
