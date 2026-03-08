@@ -334,6 +334,138 @@ end
 
 ---
 
+#### Map Canvas Taint (12.0.0+) - CRITICAL for World Map Addons
+
+In 12.0.0+, addon-created frames parented to `WorldMapFrame:GetCanvas()` (or `FlightMapFrame` canvas) can cause **taint propagation** that manifests as "secret number value" errors in Blizzard tooltip code when hovering map pins. This affects any addon that draws custom content on the world map or flight map.
+
+**Root Causes of Map Canvas Taint:**
+
+1. **Global frame names**: `CreateFrame("Frame", "MyAddonFrame", canvas)` creates a tainted `_G` entry. Blizzard's C++ hit-testing traverses all children of the canvas, and tainted global names propagate taint through the secure execution context.
+
+2. **Mouse-enabled frames**: Addon frames on the canvas with `EnableMouse(true)` participate in C++ hit-testing traversals, propagating taint to Blizzard's pin tooltip code.
+
+3. **hooksecurefunc on map methods**: Hooking `FlightMapFrame` methods (e.g., via `hooksecurefunc`) can taint the FlightMap's pin pipeline, causing `SetPassThroughButtons` ADDON_ACTION_BLOCKED errors.
+
+4. **Writing properties to GameTooltip**: Setting ANY property on `GameTooltip` from addon code (e.g., `GameTooltip.recalculatePadding = true`) taints that property, which can cause errors when Blizzard code later reads it.
+
+**Symptoms:**
+- "attempt to compare (a secret number value)" errors when hovering world map or flight map pins
+- `ADDON_ACTION_BLOCKED` errors referencing `SetPassThroughButtons`
+- Tooltip display failures on map pins
+
+**Mitigation for Direct Canvas Frames:**
+```lua
+-- WRONG: Global name creates tainted _G entry
+local frame = CreateFrame("Frame", "MyAddonMapFrame", WorldMapFrame:GetCanvas())
+
+-- CORRECT: No global name, mouse disabled
+local frame = CreateFrame("Frame", nil, WorldMapFrame:GetCanvas())
+frame:EnableMouse(false)
+frame:EnableMouseMotion(false)
+
+-- Hide frames when not actively displaying content
+frame:Hide()
+```
+
+**Recommended: Use Blizzard's Pin System Instead:**
+
+The proper way to add custom content to the world map without taint is through Blizzard's data provider and pin system:
+
+```lua
+-- Create a data provider mixin
+MyAddonDataProviderMixin = CreateFromMixins(MapCanvasDataProviderMixin)
+
+function MyAddonDataProviderMixin:OnAdded(mapCanvas)
+    MapCanvasDataProviderMixin.OnAdded(self, mapCanvas)
+end
+
+function MyAddonDataProviderMixin:RefreshAllData()
+    self:RemoveAllData()
+    -- Add pins through the official pin API
+    for _, questData in ipairs(myQuestList) do
+        self:GetMap():AcquirePin("MyAddonPinTemplate", questData)
+    end
+end
+
+-- Register the data provider with the world map
+WorldMapFrame:AddDataProvider(CreateFromMixins(MyAddonDataProviderMixin))
+```
+
+**DO NOT reparent from GetCanvas() to ScrollContainer** -- this breaks coordinate space (pins become tiny/mispositioned). This was tested and confirmed to fail.
+
+**pcall() for Tooltip Safety:**
+
+When calling Blizzard tooltip functions that might encounter tainted data, wrap with `pcall()`:
+```lua
+local ok, err = pcall(GameTooltip_AddQuestRewardsToTooltip, GameTooltip, questID, style)
+if not ok then
+    -- Tooltip failed due to taint; silently skip rather than crashing
+end
+```
+
+---
+
+#### Quest Reward Data Loading Patterns (12.0.0+)
+
+Quest reward data (especially for world quests) is often unavailable immediately on login due to cold server caches. Several commonly-used APIs have non-obvious behavior:
+
+**API Behavior Gotchas:**
+
+| API | Behavior | Notes |
+|-----|----------|-------|
+| `HaveQuestData(questID)` | Returns true for basic quest info (title) | Does NOT guarantee reward data is loaded |
+| `GetNumQuestLogRewards(questID)` | Can return 0 when item data not yet cached | Also temporarily returns 0 during QUEST_LOG_UPDATE handling |
+| `C_QuestLog.RequestLoadQuestByID(questID)` | Requests basic quest data from server | Fires `QUEST_DATA_LOAD_RESULT` on completion |
+| `C_Item.RequestLoadItemDataByID(itemID)` | Requests item data from server | Fires `GET_ITEM_INFO_RECEIVED` on completion |
+
+**Reliable Reward Data Loading Pattern:**
+```lua
+-- Request quest data proactively
+C_QuestLog.RequestLoadQuestByID(questID)
+
+-- Listen for both quest data AND item data events
+frame:RegisterEvent("QUEST_DATA_LOAD_RESULT")
+frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+
+-- On QUEST_DATA_LOAD_RESULT(questID, success):
+--   Check GetNumQuestLogRewards(questID) > 0
+--   If reward items exist, request their item data too
+
+-- On GET_ITEM_INFO_RECEIVED(itemID):
+--   Re-check if this item belongs to a quest you're tracking
+--   Now GetItemInfo(itemID) will return valid data
+```
+
+**Caching Strategy for World Quest Displays:**
+
+Cache known-good reward data to prevent display regression during `QUEST_LOG_UPDATE` rebuilds, since `GetNumQuestLogRewards()` can temporarily return 0 during that event:
+
+```lua
+local rewardCache = {}
+
+local function GetCachedRewardData(questID)
+    local numRewards = GetNumQuestLogRewards(questID)
+    if numRewards > 0 then
+        -- Fresh data available, update cache
+        local name, texture, count, quality, isUsable, itemID = GetQuestLogRewardInfo(1, questID)
+        if name then
+            rewardCache[questID] = { name = name, texture = texture, quality = quality, itemID = itemID }
+        end
+    end
+    -- Return cached data (survives temporary 0-reward states)
+    return rewardCache[questID]
+end
+```
+
+**C_TaskQuest.GetQuestsOnMap() Behavior:**
+
+This API returns quests from the queried map AND all child sub-zone maps:
+- Child zone quests have their `mapID` field remapped to the parent map
+- The `childDepth` field indicates a quest originates from a child map
+- Use `C_TaskQuest.GetQuestZoneID(questID)` to get a quest's true/canonical zone ID
+
+---
+
 #### C_ActionBar Namespace (Replaces Global Action Bar Functions)
 
 > **Note:** C_ActionBar functions may return **secret values during combat**. See [12a_Secret_Safe_APIs.md](12a_Secret_Safe_APIs.md) for handling patterns.
@@ -2715,8 +2847,8 @@ You can keep your addons working across expansions with minimal effort.
 
 ---
 
-**Version:** 2.4 - Deduplicated secret values content; moved detailed API docs to 12a_Secret_Safe_APIs.md
-**Last Updated:** 2026-01-28
+**Version:** 2.5 - Added Map Canvas Taint section, Quest Reward Data Loading patterns, C_TaskQuest behavior notes
+**Last Updated:** 2026-03-08
 **Coverage:** API changes from WoW 9.0 through 12.0.0
 
 <!-- CLAUDE_SKIP_END -->

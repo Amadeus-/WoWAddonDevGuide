@@ -101,7 +101,7 @@ Key files to check in BLIZZARD_SRC:
 - Reference the comprehensive guide when uncertain
 - Use `:` for method calls, `.` for property access
 - Check `InCombatLockdown()` before restricted operations
-- Handle Secret Values in combat with `issecretvalue()` (12.0.0+)
+- Handle Secret Values with `issecretvalue()` (12.0.0+) -- secrets appear in ANY tainted context, not just combat
 - Use C_ActionBar namespace (global action bar functions removed in 12.0.0)
 - Use C_CombatLog namespace (CombatLogGetCurrentEventInfo removed in 12.0.0)
 - Use `UnitHealthPercent()`/`UnitPowerPercent()` for arithmetic on health/power (12.0.0+)
@@ -110,6 +110,7 @@ Key files to check in BLIZZARD_SRC:
 - Use deprecated global API functions (use C_* equivalents)
 - Access saved variables before `ADDON_LOADED` fires
 - Modify protected frames during combat
+- Create global frame names for frames parented to Blizzard secure containers (map canvas, etc.) -- causes taint
 - Create frame names that conflict with Blizzard UI
 - Poll in `OnUpdate` when events can be used
 - Assume API availability without version checks
@@ -309,6 +310,10 @@ See `12a_Secret_Safe_APIs.md` for complete documentation.
 - **Event race conditions:** Use `C_Timer.After(0, ...)` to defer by one frame when event firing order matters (e.g., UNIT_SPELLCAST_STOP fires before UNIT_SPELLCAST_INTERRUPTED in 12.0.0)
 - **Upvalue capture order:** Variables must be declared BEFORE any function that captures them as upvalues in a closure. A common bug is declaring a variable after the function definition, causing the upvalue to always be nil
 - **SetNamePlateSize is GLOBAL:** Applies to ALL nameplates, not per-plate. Oversized hitboxes steal clicks from adjacent plates
+- **Map canvas taint (12.0.0+):** Addon frames parented to `WorldMapFrame:GetCanvas()` cause taint propagation to Blizzard tooltip code. Use `nil` for frame names (no globals), set `EnableMouse(false)` + `EnableMouseMotion(false)`, hide when not needed. Prefer Blizzard's pin system (`AcquirePin` with data providers) for map content. Never reparent from GetCanvas() to ScrollContainer (breaks coordinates). Never `hooksecurefunc` on FlightMapFrame methods (taints pin pipeline). Wrap `GameTooltip_AddQuestRewardsToTooltip` with `pcall()` for safety.
+- **Secret values beyond combat:** Secret values appear in ANY tainted execution context, not just during `InCombatLockdown()`. Taint propagated through map canvas frames can trigger "secret number value" errors outside combat. Always use `issecretvalue()` checks, not `InCombatLockdown()` guards.
+- **Quest reward data loading:** `HaveQuestData(questID)` does NOT guarantee reward data is loaded. `GetNumQuestLogRewards(questID)` can transiently return 0 during `QUEST_LOG_UPDATE`. Use `C_QuestLog.RequestLoadQuestByID()` + `QUEST_DATA_LOAD_RESULT` event, and cache known-good reward data.
+- **C_TaskQuest.GetQuestsOnMap():** Returns quests from queried map AND child sub-zones. Child quests have `mapID` remapped to parent; use `C_TaskQuest.GetQuestZoneID(questID)` for the true zone.
 
 ## Common Libraries
 

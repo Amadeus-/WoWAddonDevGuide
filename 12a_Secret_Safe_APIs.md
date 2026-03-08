@@ -27,6 +27,8 @@ WoW 12.0.0 (Midnight) introduced the **Secret Values** system as part of Blizzar
 
 **Scope:** Secret values are active during **ALL combat contexts**, including open-world combat, not just instanced content (dungeons, raids, Mythic+, PvP). Any time a player is in combat anywhere in the game, affected APIs return secret values.
 
+**IMPORTANT: Taint Propagation Beyond Combat:** Secret values also appear in **any tainted execution context**, not exclusively during `InCombatLockdown()`. For example, addon-created frames parented to secure Blizzard frames (like `WorldMapFrame:GetCanvas()`) can propagate taint into Blizzard's tooltip code, causing "secret number value" errors even outside combat. `InCombatLockdown()` is NOT a sufficient guard against secret value errors -- always use `issecretvalue()` checks regardless of combat state.
+
 ```lua
 -- Example: UnitHealth() during combat
 local health = UnitHealth("target")  -- Returns a secret value

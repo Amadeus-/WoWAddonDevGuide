@@ -1,6 +1,35 @@
 <\!-- CLAUDE_SKIP_START -->
 # WoW Addon Development Knowledge Base - Update Log
 
+## Version 2.7 - 2026-03-08
+
+### Map Canvas Taint, Secret Values Scope, Quest Reward Data Patterns
+
+**Summary:**
+Added documentation for map canvas taint propagation (12.0.0+), clarified that secret values appear in ALL tainted execution contexts (not just combat), and documented quest reward data loading patterns including C_TaskQuest behavior.
+
+**Files Updated:**
+- `12_API_Migration_Guide.md` (v2.5) - Added "Map Canvas Taint (12.0.0+)" section covering global frame names, mouse-enabled frames, hooksecurefunc pitfalls, GameTooltip property tainting, and Blizzard pin system as the proper alternative. Added "Quest Reward Data Loading Patterns" section covering HaveQuestData limitations, GetNumQuestLogRewards transient zeros, caching strategies, and C_TaskQuest.GetQuestsOnMap child-zone behavior.
+- `12a_Secret_Safe_APIs.md` - Added "Taint Propagation Beyond Combat" note clarifying that secret values appear in any tainted execution context, not exclusively during InCombatLockdown().
+- `WoWAddon-Expert.md` (agent) - Added map canvas taint, secret values beyond combat, quest reward data, and C_TaskQuest patterns to Additional Practical Patterns. Updated ALWAYS rule for secret values to note they appear beyond combat. Added NEVER rule about global frame names on secure containers.
+- `wow.md` (coordinator) - Added map canvas taint, secret values beyond combat, and quest reward data rules to Critical Rules section.
+
+**Key Findings Documented:**
+
+1. **Map canvas taint**: Addon frames on WorldMapFrame:GetCanvas() with global names or EnableMouse(true) propagate taint through C++ hit-testing, causing "secret number value" errors in Blizzard tooltip code. Use nil names, disable mouse, prefer Blizzard's pin system.
+
+2. **Secret values scope**: Secrets appear in ANY tainted execution context, not just during InCombatLockdown(). Map canvas taint is a concrete example of this occurring outside combat.
+
+3. **Quest reward data**: HaveQuestData() only guarantees basic quest info. GetNumQuestLogRewards() transiently returns 0 during QUEST_LOG_UPDATE. Cache known-good reward data to prevent display regression.
+
+4. **C_TaskQuest.GetQuestsOnMap()**: Returns quests from parent AND child sub-zone maps. Child quest mapIDs are remapped to parent. Use C_TaskQuest.GetQuestZoneID() for canonical zone.
+
+5. **FlightMap hooking**: hooksecurefunc on FlightMapFrame methods taints the pin pipeline, causing SetPassThroughButtons ADDON_ACTION_BLOCKED errors.
+
+6. **GameTooltip property tainting**: Writing ANY property to GameTooltip from addon code taints that property permanently for the session.
+
+---
+
 ## Version 2.6 - 2026-02-05
 
 ### Aura Data Secret Values & C_Spell Name Lookup Removal (12.0.0)
