@@ -344,7 +344,40 @@ In 12.0.0+, addon-created frames parented to `WorldMapFrame:GetCanvas()` (or `Fl
 
 2. **Mouse-enabled frames**: Addon frames on the canvas with `EnableMouse(true)` participate in C++ hit-testing traversals, propagating taint to Blizzard's pin tooltip code.
 
-3. **hooksecurefunc on map methods**: Hooking `FlightMapFrame` methods (e.g., via `hooksecurefunc`) can taint the FlightMap's pin pipeline, causing `SetPassThroughButtons` ADDON_ACTION_BLOCKED errors.
+3. **hooksecurefunc on map methods**: Hooking `WorldMapFrame` or `FlightMapFrame` methods (e.g., via `hooksecurefunc`) can taint the map's pin pipeline, causing `SetPassThroughButtons` ADDON_ACTION_BLOCKED errors.
+
+**Prefer EventRegistry Callbacks Over hooksecurefunc:**
+
+For `WorldMapFrame`, use `EventRegistry` callbacks instead of `hooksecurefunc`:
+- `WorldMapOnShow` -- fires at end of `WorldMapMixin:OnShow()`
+- `WorldMapOnHide` -- fires during `WorldMapMixin:OnHide()`
+- `WorldMapMinimized` / `WorldMapMaximized` -- fires on minimize/maximize
+- `MapCanvas.MapSet` -- fires from `MapCanvasScrollControllerMixin:SetMapID()`, serves as an `OnMapChanged` equivalent
+
+```lua
+-- WRONG: hooksecurefunc taints the secure call stack
+hooksecurefunc(WorldMapFrame, "OnShow", function() --[[ addon code ]] end)
+
+-- CORRECT: EventRegistry fires callbacks outside the secure call stack
+EventRegistry:RegisterCallback("WorldMapOnShow", function()
+    -- Safe to run addon code here
+end, myAddon)
+
+EventRegistry:RegisterCallback("MapCanvas.MapSet", function(_, mapID)
+    -- Fires when the map changes, safe replacement for hooking SetMapID
+end, myAddon)
+```
+
+For `FlightMapFrame`, if `hooksecurefunc` is unavoidable (e.g., hooking `RefreshAllDataProviders`), defer the callback with `C_Timer.After(0, ...)` to move addon code out of the secure call stack:
+
+```lua
+hooksecurefunc(FlightMapFrame, "RefreshAllDataProviders", function(self)
+    C_Timer.After(0, function()
+        -- Addon code runs next frame, outside secure call stack
+        MyAddon:UpdateFlightMapPins()
+    end)
+end)
+```
 
 4. **Writing properties to GameTooltip**: Setting ANY property on `GameTooltip` from addon code (e.g., `GameTooltip.recalculatePadding = true`) taints that property, which can cause errors when Blizzard code later reads it.
 
@@ -455,7 +488,12 @@ end
 
 #### GameTooltip.ItemTooltip Stale State
 
-A critical taint pitfall: `GameTooltip:SetOwner()` fires `OnTooltipCleared` which clears `insertedFrames` (progress bars) but does **NOT** hide `GameTooltip.ItemTooltip`. If a previous Blizzard tooltip interaction (e.g., hovering a world quest pin with item rewards) left `ItemTooltip` in a "shown" state, calling `GameTooltip:Show()` from addon code triggers `GameTooltip_CalculatePadding`, which finds `ItemTooltip:IsShown() == true` (stale) and performs arithmetic on `ItemTooltip:GetSize()` from addon-tainted context — tainting the dimensions.
+A critical taint pitfall involving the distinction between `OnTooltipCleared` and `OnHide`:
+
+- **`SetOwner()` fires `OnTooltipCleared`**, which calls `SharedTooltip_ClearInsertedFrames` (clears progress bars) but does **NOT** touch `ItemTooltip`.
+- **Only `GameTooltip:Hide()` fires `OnHide`** -> `GameTooltip_OnHide` -> `EmbeddedItemTooltip_Hide(self.ItemTooltip)`, which actually hides `ItemTooltip`.
+
+If a previous Blizzard tooltip interaction (e.g., hovering a world quest pin with item rewards) left `ItemTooltip` in a "shown" state, calling `GameTooltip:Show()` from addon code triggers `GameTooltip_CalculatePadding`. That function checks `ItemTooltip:IsShown()` and `BottomFontString:IsShown()` first -- if both are false, it takes an **early exit** with `SetPadding(0,0,0,0)` and performs NO dimension arithmetic whatsoever. But if `ItemTooltip` is still shown (stale), the function performs arithmetic on `ItemTooltip:GetSize()` from addon-tainted context, tainting the dimensions. This is why hiding `ItemTooltip` after `SetOwner()` is effective -- it ensures the early exit path is taken.
 
 **Always hide `ItemTooltip` after `SetOwner()`:**
 

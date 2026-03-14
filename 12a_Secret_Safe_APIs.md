@@ -402,24 +402,33 @@ end
 
 ## Secure Execution Functions
 
-These functions allow secure (untainted) code to be called in a way that prevents taint propagation.
+These functions allow addon code to call Blizzard functions in a way that avoids taint propagation from the caller's context.
 
 ### securecallfunction(func, ...)
 
-Calls a function securely, preventing taint propagation.
+Executes `func` in **the function's own security context**, not the caller's context.
+
+- For **C++ APIs and Blizzard Lua functions**, this means secure execution -- events fired by the function and any attribute writes or secure cascades it triggers will NOT carry the addon's taint.
+- For **addon Lua functions**, it still runs as tainted because the function itself is tainted -- `securecallfunction` does not grant security, it restores the callee's native security level.
 
 ```lua
 -- Signature
 local result1, result2, ... = securecallfunction(func, arg1, arg2, ...)
 
 -- Parameters:
---   func: Function to call securely
+--   func: Function to call in its own security context
 --   ...: Arguments to pass to the function
 
 -- Returns:
 --   ...: Return values from the function
 
--- Example (from Blizzard code):
+-- Primary use case: calling Blizzard APIs from addon code so their
+-- side effects (events, attribute writes, secure cascades) execute securely
+securecallfunction(ShowUIPanel, SomeBlizzardPanel)
+securecallfunction(C_QuestLog.AddWorldQuestWatch, questID)
+securecallfunction(WorldMapFrame.SetMapID, WorldMapFrame, mapID)
+
+-- Blizzard also uses this in SecureTypes to safely access values:
 local function GetValueSecure(self)
     return self.value
 end
@@ -429,7 +438,7 @@ function SomeObject:GetValue()
 end
 ```
 
-**Key Use Case:** Blizzard uses this extensively in SecureTypes to safely access values that might be tainted.
+**Key Use Case:** Calling Blizzard APIs (e.g., `ShowUIPanel`, `C_QuestLog.AddWorldQuestWatch`, `WorldMapFrame:SetMapID()`) from addon code so their side effects execute in the secure context, preventing taint propagation through Blizzard's internal call chains.
 
 ### secureexecuterange(table, func, ...)
 

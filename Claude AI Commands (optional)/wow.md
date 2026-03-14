@@ -102,7 +102,7 @@ When reviewing addons with multiple files:
 - Check `InCombatLockdown()` before restricted operations
 - Use modern C_* namespaced APIs (not deprecated globals)
 - Localize global lookups for performance
-- Handle Secret Values in combat (12.0.0+) - use `issecretvalue()` to check
+- Handle Secret Values (12.0.0+) - use `issecretvalue()` to check
 - Use C_ActionBar, C_CombatLog namespaces (globals removed in 12.0.0)
 - **Nameplate click targeting (12.0.0+)**: Never `Hide()` UnitFrame (use `SetAlpha(0)`), set `EnableMouse(false)` on custom overlay frames
 - **Map canvas taint (12.0.0+)**: Addon frames on `WorldMapFrame:GetCanvas()` cause taint. Use `nil` frame names, `EnableMouse(false)`. For map pins, use `CreateUnsecuredRegionPoolInstance` (not `CreateFramePool`) and pre-register in `WorldMapFrame.pinPools`. `AddDataProvider` inserts tainted keys; prefer manual pin lifecycle. Pin `OnReleased` fires before `OnLoad` on first acquire — must be nil-safe. No `MapCanvasPinTemplate` exists; use plain frames with mixin.
