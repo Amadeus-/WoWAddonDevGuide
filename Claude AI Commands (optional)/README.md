@@ -20,8 +20,10 @@ This conserves context in the main conversation while maintaining thoroughness.
 3. Edit `WoWAddon-Expert.md` and update the **Local Paths** section at the top:
    - `ADDONS_DIR`: Your WoW AddOns directory
    - `GUIDE_DIR`: Your WoW Addon Development Guide directory
-
-> **Note:** The coordinator (`wow.md`) has no paths - only the agent needs updating.
+   - `BLIZZARD_SRC`: Your Blizzard UI source directory
+4. Edit `wow.md` and update the **User Configuration** table at the top:
+   - **AddOns Directory**: Your WoW AddOns directory
+   - **Blizzard UI Source**: Your Blizzard UI source directory
 
 ---
 

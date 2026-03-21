@@ -55,7 +55,7 @@ This architecture conserves context in the main conversation while maintaining t
 - Code review and optimization
 
 **Handle directly yourself**:
-- Asking clarifying questions about what the user wants
+- Asking clarifying questions about what the user wants; never make assumptions.
 - Planning the overall approach
 - Summarizing results from subagent work
 - Simple factual answers you already know
