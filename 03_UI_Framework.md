@@ -675,6 +675,22 @@ targetFontString:SetFont(sourceFontString:GetFont())
 
 **Tip:** Also set a fallback font at creation time with `SetFontObject("GameFontNormal")` so the FontString has a valid font before the dynamic match runs. Calling `SetText()` on a FontString with no font set will error.
 
+#### SetFont() Outline Flags Parameter
+
+The third argument to `FontString:SetFont(fontFile, height, flags)` is the outline flags string (e.g., `"OUTLINE"`, `"THICKOUTLINE"`, `"MONOCHROME"`). To specify no outline, pass `nil` or omit the argument — do NOT pass `false`:
+
+```lua
+-- CORRECT: No outline
+fontString:SetFont("Fonts\\FRIZQT__.TTF", 12, nil)
+fontString:SetFont("Fonts\\FRIZQT__.TTF", 12)
+
+-- CORRECT: With outline
+fontString:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE")
+
+-- WRONG: false is not a valid flags value and may cause issues
+fontString:SetFont("Fonts\\FRIZQT__.TTF", 12, false)
+```
+
 ### StatusBar Methods
 
 **Interpolated Values (12.0.0):**

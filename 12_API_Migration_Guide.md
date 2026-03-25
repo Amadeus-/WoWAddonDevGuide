@@ -501,6 +501,16 @@ if not ok then
 end
 ```
 
+#### Minimap Overlay Frame Mouse Handling
+
+Addon frames overlaid on the Minimap should use `EnableMouse(false)` to prevent intercepting clicks intended for minimap pins and the minimap itself — the same principle as nameplate and map canvas overlays:
+
+```lua
+local overlay = CreateFrame("Frame", nil, Minimap)
+overlay:SetAllPoints()
+overlay:EnableMouse(false)  -- Clicks pass through to Minimap
+```
+
 #### GameTooltip.ItemTooltip Stale State
 
 A critical taint pitfall involving the distinction between `OnTooltipCleared` and `OnHide`:
@@ -549,6 +559,23 @@ This completely avoids `GameTooltip_CalculatePadding`, `ItemTooltip` stale state
 **When to use a private tooltip vs. patching GameTooltip:**
 - **Private tooltip**: Best for map pins, custom frames, or any context where you control the tooltip lifecycle. Eliminates taint entirely.
 - **Patching GameTooltip**: Only necessary when you must modify or extend the shared tooltip that Blizzard code also uses (e.g., hooking `OnTooltipSetItem`).
+
+#### Tooltip Line Layout Changes (12.0.0)
+
+The ordering of tooltip lines for items changed in 12.0.0. Notably, the level requirement line now appears **after** "Use:" effect lines, rather than being separated from stat lines by an empty line as in previous versions.
+
+**Impact:** Addons that parse tooltip text line-by-line (for stat extraction, item scoring, or level requirement detection) cannot rely on empty-line delimiters to determine where stats end and supplementary information begins. Instead, use keyword-based detection (look for known prefixes like "Equip:", "Use:", "Requires Level", etc.) to determine line types.
+
+```lua
+-- OLD assumption (broken in 12.0.0):
+-- Empty line = end of stats, everything after is supplementary
+if lineText == " " then break end  -- No longer reliable!
+
+-- NEW approach: detect line types by content
+if foundEquip or foundUse or foundLevel then
+    break  -- Stop after reaching known non-stat sections
+end
+```
 
 ---
 
@@ -676,6 +703,32 @@ frame:SetScript("OnEvent", function()
     wipe(pendingActions)
 end)
 ```
+
+##### Module Initialization During Combat
+
+Addons that load while the player is in combat (e.g., on login during combat, or modules loaded on demand) must defer ALL creation and modification of protected frames until combat ends. Even seemingly safe operations like `SetAlpha(0)` on a protected frame during combat can propagate taint.
+
+```lua
+-- Pattern: Defer entire module startup if in combat
+local function InitModule()
+    -- Create frames, set attributes, modify protected elements
+    CreateSecureFrames()
+    SetupActionButtons()
+end
+
+if InCombatLockdown() then
+    local f = CreateFrame("Frame")
+    f:RegisterEvent("PLAYER_REGEN_ENABLED")
+    f:SetScript("OnEvent", function(self)
+        self:UnregisterAllEvents()
+        InitModule()
+    end)
+else
+    InitModule()
+end
+```
+
+> **Warning:** `SetAlpha(0)` is safe for non-protected frames (e.g., nameplate overlays) during combat, but calling it on a protected/secure frame during combat is a restricted operation just like `Hide()`. For protected frames, always defer to `PLAYER_REGEN_ENABLED`.
 
 **10. `pcall()` around APIs that may encounter secret values.**
 

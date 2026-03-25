@@ -794,6 +794,27 @@ local lineType = line.type
 if issecretvalue(lineType) then return end  -- Check before comparing
 ```
 
+#### Legacy Tooltip Font String Pattern
+
+The legacy pattern of scanning tooltip text via global font string names (`_G["GameTooltipTextLeft"..i]`) is especially vulnerable to secret values in tainted contexts:
+
+```lua
+-- LEGACY PATTERN (vulnerable to secret values):
+for i = 1, GameTooltip:NumLines() do
+    local line = _G["GameTooltipTextLeft"..i]
+    local text = line:GetText()
+    -- Both `line` and `text` can be secret values in tainted contexts!
+    if issecretvalue(text) then
+        -- Cannot parse this line — skip or bail out
+        break
+    end
+    -- Also check the line object itself
+    if issecretvalue(line) then break end
+end
+```
+
+**Recommended migration:** Use `C_TooltipInfo` APIs (which return structured data) or create a private scanning tooltip. The `_G["GameTooltipTextLeft"..i]` pattern reads from the shared `GameTooltip`, which inherits taint from any prior addon interaction. If you must use this pattern, always guard with `issecretvalue()` checks on both the font string object and its text content.
+
 ---
 
 ## APIs That Accept Secret Values

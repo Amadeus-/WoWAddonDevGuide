@@ -269,6 +269,7 @@ end
 
 **Detection Functions:**
 - `issecretvalue(val)` - Check if value is secret (MOST IMPORTANT)
+- `issecrettable(tbl)` - Check if table is a secret table
 - `canaccessvalue(val)` - Check if caller can use value
 - `hasanysecretvalues(...)` - Check if ANY value in list is secret
 - `canaccesstable(tbl)` - Check if table is accessible
