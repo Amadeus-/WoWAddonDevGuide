@@ -669,7 +669,7 @@ end
 
 **7. `SetAlpha(0)` instead of `Hide()` for UI elements that taint when hidden.**
 
-Similar to the nameplate pattern, this keeps the frame technically visible while making it invisible to the user. The frame's children remain active (important for HitTestFrame, event handlers, etc.).
+Similar to the nameplate pattern, this keeps the frame technically visible while making it invisible to the user. The frame's children remain active (important for HitTestFrame, event handlers, etc.). Common frames that benefit from `SetAlpha(0)` instead of `Hide()`: nameplate UnitFrames, totem frames, buff/debuff icon frames, and any frame whose visibility state is observed by Blizzard secure code.
 
 **8. Nil out global frame references to prevent Blizzard discovery.**
 
@@ -2602,6 +2602,24 @@ local isWW_11_2_0 = (tocVersion >= 110200)  -- Reagent Bank removed
 local isWW_11_2_5 = (tocVersion >= 110205)  -- C_ItemSocketInfo
 local isWW_11_2_7 = (tocVersion >= 110207)  -- Housing system
 ```
+
+### Build Number Gating for Mid-Patch Changes
+
+When features change between hotfixes (not just major patches), use the build number from `select(2, GetBuildInfo())` instead of the TOC version:
+
+```lua
+local _, buildNumber = GetBuildInfo()
+buildNumber = tonumber(buildNumber)
+
+-- TOC version only changes on major patches (120000 -> 120001)
+-- Build number changes on every hotfix, enabling precise gating
+if buildNumber >= 66562 then
+    -- 12.0.1 hotfix: Duration APIs available, cooldown methods restricted
+    useDurationObjects = true
+end
+```
+
+This is how major addons (ElvUI/LibActionButton) gate 12.0.1 hotfix-specific features like `SetCooldownFromDurationObject` support.
 
 ### Client Type Detection
 

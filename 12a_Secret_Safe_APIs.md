@@ -695,6 +695,21 @@ The following APIs return secret values **during combat** (or when `secretCombat
 | `UnitHealthPercent(unit, usePredicted, curveConstant)` | 0-100 percentage | **NOT SECRET** - Use for arithmetic! |
 | `UnitPowerPercent(unit, powerType, curveConstant)` | 0-100 percentage | **NOT SECRET** - Use for arithmetic! |
 
+##### Defensive `pcall()` on Percentage APIs
+
+While `UnitHealthPercent()` and `UnitPowerPercent()` return non-secret percentage values, they can still error when called with certain arguments (e.g., color curve parameters) in deeply tainted execution contexts. For maximum resilience, wrap calls in `pcall()`:
+
+```lua
+local ok, pct = pcall(UnitHealthPercent, unit, true, ScaleTo100)
+if ok then
+    -- use pct for color gradient
+else
+    pct = 0  -- fallback
+end
+```
+
+This pattern is used by major addons (ElvUI/oUF) for all health/power gradient color computations.
+
 ### Unit Comparison and Identity APIs
 
 Several unit APIs return secret values during combat that cause errors if used directly in boolean tests, comparisons, or as table keys.
@@ -1213,6 +1228,19 @@ local duration = GetTotemDuration(slot)
 cooldown:SetCooldownFromDurationObject(duration)
 ```
 
+### Manual Duration Objects for Item Cooldowns
+
+Unlike spells (`C_Spell.GetSpellCooldownDuration()`) and LoC effects (`C_LossOfControl.GetActiveLossOfControlDuration()`), item cooldowns have no native Duration API. Synthesize a DurationObject manually using `C_DurationUtil.CreateDuration()`:
+
+```lua
+local start, duration, enable, modRate = C_Container.GetItemCooldown(itemID)
+local dur = C_DurationUtil.CreateDuration()
+dur:SetTimeFromStart(start, duration, modRate or 1)
+cooldown:SetCooldownFromDurationObject(dur)
+```
+
+`SetTimeFromStart(startTime, duration, modRate)` is a convenience method that configures all timing properties in one call (alternative to calling `SetStartTime()` and `SetDuration()` separately).
+
 ### SetCooldownFromDurationObject and SetUseAuraDisplayTime
 
 **IMPORTANT:** Do NOT call `SetUseAuraDisplayTime(true)` when using `SetCooldownFromDurationObject()`. `SetCooldownFromDurationObject` already handles aura-style display timing internally. Combining both causes the countdown text to display **1 second LESS** than expected (e.g., showing "4" when there are 5 seconds remaining).
@@ -1405,7 +1433,30 @@ This creates the visual appearance of a single line: "Interrupted (PlayerName)" 
 - Use `SetFormattedText("(%s)", secret)` to add formatting around secret values without Lua concatenation
 - Match fonts between FontStrings with `secretText:SetFont(staticText:GetFont())`
 
-### Pattern 8: Table-Level Secret Values
+### Pattern 8: C++ APIs as Secret-Safe Fallbacks for Lua Lookups
+
+When a unit API returns a secret value, you cannot use it as a Lua table key -- `RAID_CLASS_COLORS[classToken]` will error with "attempt to index with secret value." However, C++ API functions accept secret arguments natively. Use the C++ equivalent as a fallback:
+
+```lua
+local _, className = UnitClass(unit)
+if issecretvalue(className) then
+    -- C++ API handles secrets natively
+    local color = C_ClassColor.GetClassColor(className)
+    if color then
+        r, g, b = color:GetRGB()
+    end
+else
+    -- Lua table lookup works when value is not secret
+    local color = RAID_CLASS_COLORS[className]
+    if color then
+        r, g, b = color.r, color.g, color.b
+    end
+end
+```
+
+This pattern applies broadly: whenever a Lua-side operation (table lookup, string manipulation, arithmetic) fails with a secret value, check if an equivalent C++ API exists that can handle the same input.
+
+### Pattern 9: Table-Level Secret Values
 
 Secret values can exist at ANY level -- the table itself, individual fields, or nested fields. Always check the outermost container first:
 
@@ -1618,6 +1669,10 @@ function addonTable.Display.HealthTextMixin:UpdateText()
     end
 end
 ```
+
+#### Cast Target Names
+
+The target name returned by `UnitCastingInfo()` / `UnitChannelInfo()` was initially treated as potentially secret in 12.0.0, but subsequent builds (12.0.1+) appear to have made it non-secret. Major addons (ElvUI, oUF) have removed their `issecretvalue()` guards on cast target names. If targeting older builds, retain checks as a safety measure.
 
 #### CastBar.lua - Secret-Safe Duration APIs
 ```lua
