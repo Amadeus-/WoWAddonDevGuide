@@ -10,6 +10,7 @@
 7. [Table Security System](#table-security-system)
 8. [SecureTypes Containers](#securetypes-containers)
 9. [APIs That Return Secret Values](#apis-that-return-secret-values)
+    - [Unit Tooltip Identity: GameTooltip:GetUnit() and the inline-helper technique](#unit-tooltip-identity-gametooltipgetunit-returns-secrets-and-the-helper-has-no-internal-guards)
 10. [APIs That Accept Secret Values](#apis-that-accept-secret-values)
     - [AbbreviateNumbers (general-purpose secret-safe formatter)](#abbreviatenumbers-general-purpose-secret-safe-numeric-formatter-1200)
     - [C_StringUtil.TruncateWhenZero / WrapString](#c_stringutiltruncatewhenzero-1200)
@@ -1000,6 +1001,105 @@ end
 ```
 
 **Recommended migration:** Use `C_TooltipInfo` APIs (which return structured data) or create a private scanning tooltip. The `_G["GameTooltipTextLeft"..i]` pattern reads from the shared `GameTooltip`, which inherits taint from any prior addon interaction. If you must use this pattern, always guard with `issecretvalue()` checks on both the font string object and its text content.
+
+#### Unit Tooltip Identity: `GameTooltip:GetUnit()` Returns Secrets and the Helper Has No Internal Guards
+
+`GameTooltip:GetUnit()` is a thin wrapper around `TooltipUtil.GetDisplayedUnit(tooltip)`. The implementation lives at `+wow-ui-source+ (12.0.0)\Interface\AddOns\Blizzard_SharedXMLGame\Tooltip\TooltipUtil.lua:34-42` and is short enough to quote in full:
+
+```lua
+function TooltipUtil.GetDisplayedUnit(tooltip)
+    if tooltip:IsTooltipType(Enum.TooltipDataType.Unit) then
+        local tooltipData = tooltip:GetPrimaryTooltipData()
+        local guid = tooltipData.guid
+        local unit = guid and UnitTokenFromGUID(guid)
+        local name = unit and UnitName(unit)
+        return name, unit, guid
+    end
+end
+```
+
+The helper returns `name, unit, guid` straight from `tooltipData` with **zero internal `canaccessvalue` / `issecretvalue` guards**. Any of the three returns can be a secret value when the underlying unit identity is restricted (PvP, restricted-aura, nameplate, party/raid token contexts — see the [Unit Comparison and Identity APIs](#unit-comparison-and-identity-apis) section for the broader rules on which unit tokens are secret-restricted, and especially the 12.0.5 update tightening `UnitName` and `UnitTokenFromGUID`).
+
+##### Why the obvious fix fails
+
+This is a case the existing "use `issecretvalue` before string ops" rule does **NOT** fully cover. A typical reader following that rule would write something like:
+
+```lua
+-- WRONG: looks correct, throws anyway
+local name, unit = tooltip:GetUnit()
+if unit ~= "none" and UnitExists(unit) and UnitIsBattlePet(unit) then
+    -- ... use name and unit ...
+end
+```
+
+The comparison `unit ~= "none"` itself throws when `unit` is a secret string, **before** any `issecretvalue` guard you might add afterward could run. Adding `if not issecretvalue(unit) then ...` after the multi-return is too late: the multi-return has already produced the secret value, and the very next operation (`unit ~= "none"`, or `name .. ":"`, or `unitTable[name]`) taints. The error surfaces at the comparison/concat/index, not at the `GetUnit()` call itself.
+
+You also can't rescue this by guarding only the final `name`/`unit` returns either, because the helper performed each chained API call (`tooltipData.guid` → `UnitTokenFromGUID(guid)` → `UnitName(unit)`) inside its own body without any short-circuit. By the time the helper returns, the damage is done — secret intermediates have already been chained through API boundaries that may, in some Blizzard internal paths, propagate taint further.
+
+##### The canonical pattern: inline-reconstruct with per-step guards
+
+The fix is to **replace the helper call with its own source body** in your addon, then insert `canaccessvalue()` guards on each intermediate before feeding it to the next API or comparing it:
+
+```lua
+local tooltipData, guid, unit, name
+if tooltip:IsTooltipType(Enum.TooltipDataType.Unit) then
+    tooltipData = tooltip:GetPrimaryTooltipData()
+    if tooltipData and canaccessvalue(tooltipData) then
+        guid = tooltipData.guid
+        if guid and canaccessvalue(guid) then
+            unit = UnitTokenFromGUID(guid)
+            if unit and canaccessvalue(unit) then
+                name = UnitName(unit)
+            end
+        end
+    end
+end
+
+-- Now safe — `unit` and `name` are either nil or non-secret accessible values
+if unit and unit ~= "none" and UnitExists(unit) and UnitIsBattlePet(unit) then
+    -- ... use name and unit ...
+end
+```
+
+Why each step's guard matters:
+
+| Step | Why the guard is needed |
+|------|------------------------|
+| `canaccessvalue(tooltipData)` | `GetPrimaryTooltipData()` can return a secret table when the tooltip's primary data is sourced from a restricted unit. Indexing a secret table for `.guid` taints. |
+| `canaccessvalue(guid)` | `tooltipData.guid` can be a secret string. Passing a secret string to `UnitTokenFromGUID` and then doing anything with the result can chain taint. |
+| `canaccessvalue(unit)` | `UnitTokenFromGUID(guid)` can return a secret unit token (especially for `arena*`, `nameplate*`, `boss*`, `party*`, `raid*`, `targettarget`, `focustarget` — see the 12.0.5 stricter rules in [Unit Comparison and Identity APIs](#unit-comparison-and-identity-apis)). Comparing a secret token against a literal string (`unit ~= "none"`) is the operation that throws. |
+| `canaccessvalue(name)` (implicit, via the chain) | `UnitName(unit)` can return a secret string. Concatenation, table-keying, or string-format on the name will throw. The chain stops here naturally because nothing further is done with `name` until the calling code uses it — at which point `name` is either nil or accessible. |
+
+##### General technique: inline the Blizzard helper when its intermediates are secret-prone
+
+The pattern above generalises beyond just `GameTooltip:GetUnit()`. **When a Blizzard convenience helper bundles multiple operations on potentially-secret values into a single call (multi-return or chained internal lookups), and the helper has no internal `canaccessvalue` guards of its own, you sometimes need to replace the helper call with its own source body in your addon**, then insert per-step `canaccessvalue` guards on each intermediate. This is more thorough than guarding only the final return values, because the comparison / concat / format that taints often runs on an intermediate, not the final value.
+
+**When to apply this technique:**
+- Any time you find a Blizzard helper that returns "ready-to-use" data derived from secret-prone unit, aura, or identity APIs.
+- Open the helper's source file in `+wow-ui-source+ (12.0.0)\Interface\AddOns\` and check whether it guards its intermediates.
+- If there are no internal `canaccessvalue` / `issecretvalue` calls visible in the helper body, it is a candidate for inlining.
+
+**When NOT to apply it:**
+- Helpers that operate purely on non-secret data (UI math, color conversion, string formatting on user-authored input).
+- Helpers that already pass their inputs straight to engine APIs with `AllowedWhenTainted` (e.g., `FontString:SetText`, `StatusBar:SetValue`) — those handle secrets natively at the C++ level.
+- Helpers wrapped by Blizzard with `securecallfunction` or that route through `TooltipDataProcessor` callbacks — those are designed for tainted callers.
+
+Don't inline reflexively. Verify the helper actually consumes secrets first; otherwise you are duplicating Blizzard code for no benefit and adding maintenance debt across patches.
+
+**Source-of-truth for checking helpers:** read the helper's `.lua` file under `+wow-ui-source+ (X.Y.Z)\Interface\AddOns\` to see whether it guards intermediates. The path layout under `+wow-ui-source+` mirrors the live `Interface\AddOns\` tree.
+
+##### Provenance / canonical attribution
+
+This pattern is taken from ArkInventory v31212.01 (one of the most-installed inventory addons), specifically the `Core\ArkInventoryTooltip.lua:2032-2048` fix released in response to issue #2147. ArkInventory's author landed on the inline-reconstruct approach after observing repeat real-world bug reports against the addon's unit-tooltip hook (`HookOnTooltipSetUnit`) — the prior code used `tooltip:GetUnit()` directly and threw secret-value errors on hover over restricted-identity units. Treat ArkInventory as a canonical reference for taint-handling patterns in inventory and tooltip-heavy contexts.
+
+##### Provenance caveats — verified vs. observed
+
+To be precise about what is established fact vs. empirical observation:
+
+- **Verified from Blizzard source:** The `TooltipUtil.GetDisplayedUnit` helper at `+wow-ui-source+ (12.0.0)\Interface\AddOns\Blizzard_SharedXMLGame\Tooltip\TooltipUtil.lua:34-42` has no internal `canaccessvalue` or `issecretvalue` guards. `GameTooltip:GetUnit()` at `+wow-ui-source+ (12.0.0)\Interface\AddOns\Blizzard_GameTooltip\Mainline\GameTooltip.lua:1018-1019` is a one-line forwarder to it.
+- **Empirically observed (not exhaustively reproduced):** The frequency with which the un-guarded `tooltip:GetUnit()` path actually throws for any given addon is workload-dependent. ArkInventory's author observed it firing routinely against unit tooltips in their addon's code path; other addons may not hit the same throw rate depending on which tooltips they hook and how often the hover targets carry secret identities.
+
+Do not overstate this as "every call to `tooltip:GetUnit()` will fail." The accurate framing is: the helper has no internal guards, so the failure mode exists and will surface intermittently in the field. Apply the inline pattern defensively in any addon that hooks unit tooltips and processes the returned `name` / `unit` / `guid`.
 
 #### Cross-Client Compatibility
 
