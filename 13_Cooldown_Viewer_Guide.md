@@ -789,6 +789,18 @@ Maps a boolean value (which may be a secret) to an alpha value without exposing 
 
 ## Layout System
 
+> **WARNING — Internal Blizzard UI infrastructure, not a public API.** `CooldownViewerLayoutManagerMixin`, `CooldownViewerSettingsDataProviderMixin`, and `CooldownViewerSettings:GetLayoutManager()` are internal mixins on Blizzard's settings UI, not part of the addon-callable surface.
+>
+> **Read-only methods are safe.** `GetLayout`, `GetLayoutByName`, and `EnumerateLayouts` are pure-Lua iterations over an internal table and behave correctly when called from addon code.
+>
+> **State-changing methods are NOT safe to call from addon code.** Any method that mutates layout state — `SetActiveLayout`, `SetActiveLayoutByID`, `AddLayout`, `RemoveLayout`, `RenameLayout`, `WriteCooldownInfo_*`, `ImportLayout`, `CopyLayout`, `ResetCurrentToDefaults`, `UseDefaultLayout` — synchronously calls `SetHasPendingChanges(true)`, which fires `EventRegistry:TriggerEvent("CooldownViewerSettings.OnPendingChanges", ...)` and `EventRegistry:TriggerEvent("CooldownViewerSettings.OnDataChanged")` on the caller's stack frame. The `OnDataChanged` listeners (`CooldownViewerMixin:RefreshLayout` and the settings-frame refresh) eventually call `C_CooldownViewer.GetCooldownViewerCategorySet` and `C_CooldownViewer.GetCooldownViewerCooldownInfo`, both of which are flagged `SecretArguments = "AllowedWhenUntainted"` in `CooldownViewerDocumentation.lua`. From any addon-tainted Lua stack frame, those C++ entry points refuse to operate and emit force-taint / secret-value errors. `securecallfunction` does **not** wash the C++ event taint attribution for these calls.
+>
+> **There is no public API for switching the active layout.** The `C_CooldownViewer` namespace exposes only six functions (`GetCooldownViewerCategorySet`, `GetCooldownViewerCooldownInfo`, `GetLayoutData`, `GetValidAlertTypes`, `IsCooldownViewerAvailable`, `SetLayoutData`); none of them switch layouts, and all but `GetLayoutData` and `IsCooldownViewerAvailable` are themselves `AllowedWhenUntainted`. **User-driven layout selection through Blizzard's cooldown-viewer settings UI is the only supported flow.** See [Layout Switching from Addon Code](#layout-switching-from-addon-code) below for details.
+>
+> Source citations: `+wow-ui-source+ (12.0.0)\Interface\AddOns\Blizzard_CooldownViewer\CooldownViewerSettingsLayoutManager.lua` lines 184, 540, 775; `CooldownViewerSettingsDataProvider.lua` lines 75-90; `+wow-ui-source+ (12.0.0)\Interface\AddOns\Blizzard_APIDocumentationGenerated\CooldownViewerDocumentation.lua` lines 13, 30, 79.
+>
+> **See also:** [12a_Secret_Safe_APIs.md — Predicates Table in API Documentation](12a_Secret_Safe_APIs.md#predicates-table-in-api-documentation-new-in-1205) for an explanation of the `AllowedWhenUntainted` flag and how to check it on any other API.
+
 ### Layout Object Structure
 
 A layout is a plain Lua table created by `CooldownManagerLayout_Create`:
@@ -830,29 +842,58 @@ The class+spec tag is encoded as: `classID * 10 + specIndex` (e.g., Warrior Arms
 
 ### Layout Manager CRUD Operations
 
-`CooldownViewerLayoutManagerMixin` provides:
+`CooldownViewerLayoutManagerMixin` provides the methods listed below. **Read the warning at the top of [Layout System](#layout-system) before calling any of these from addon code.** The two tables below split the surface by safety:
+
+**Read-only operations (safe to call from addon code):**
+
+| Operation | Method | Description |
+|-----------|--------|-------------|
+| Read | `GetLayout(id)` / `GetLayoutByName(name, specTag)` | Retrieve a layout (pure-Lua table lookup) |
+| List | `EnumerateLayouts()` | Iterate all layouts (`pairs` over internal table) |
+
+**Internal Blizzard UI methods (will trigger taint cascade if called from addon code):**
 
 | Operation | Method | Description |
 |-----------|--------|-------------|
 | Create | `AddLayout(name, specTag, desiredID)` | Add a new layout, auto-assigns ID if needed |
-| Read | `GetLayout(id)` / `GetLayoutByName(name, specTag)` | Retrieve a layout |
 | Update | `WriteCooldownInfo_Category(info, category)` | Update a cooldown's category |
 | Delete | `RemoveLayout(id)` | Remove a layout and clear active state |
-| List | `EnumerateLayouts()` | Iterate all layouts |
 | Activate | `SetActiveLayout(layout)` / `SetActiveLayoutByID(id)` | Set the current layout |
 | Import | `ImportLayout(name, layout)` | Import a copied layout |
 | Copy | `CopyLayout(layout)` | Deep-copy with new ID |
+
+Each method in the second table fires the `OnDataChanged` cascade described in the warning above. Use the cooldown-viewer settings UI for any user-driven mutation; see [Layout Switching from Addon Code](#layout-switching-from-addon-code) for the addon-code limitations.
 
 ### Undo Support
 
 `CooldownViewerSettingsDataProviderMixin:ResetToRestorePoint()` reverts to the last saved state. The layout manager's `CreateRestorePoint` / `ResetToRestorePoint` pattern is used by the settings UI to allow "Revert Changes" via a `StaticPopupDialog`.
 
+### Layout Switching from Addon Code
+
+**There is no supported addon-code path for switching the active cooldown viewer layout in 12.0.0.** The taint architecture of the cooldown viewer subsystem means every available mechanism either runs the `OnDataChanged` cascade through addon-tainted stack frames or hits an `AllowedWhenUntainted` C++ entry point. Specifically:
+
+| Approach | Why it fails from addon code |
+|----------|------------------------------|
+| `layoutManager:SetActiveLayout(layout)` | Synchronous `OnDataChanged` cascade lands on `GetCooldownViewerCategorySet` / `GetCooldownViewerCooldownInfo`, both `AllowedWhenUntainted`. |
+| `layoutManager:SetActiveLayoutByID(id)` | Same cascade as `SetActiveLayout`. |
+| `CooldownViewerSettings:SetActiveLayoutByID(id)` | Wraps the data-provider call, same end result. |
+| `C_CooldownViewer.SetLayoutData(blob)` | The C++ entry itself is `SecretArguments = "AllowedWhenUntainted"` (`CooldownViewerDocumentation.lua:79`). Rewriting the serialized blob to flip the active layout ID and writing it back is blocked. |
+| Custom non-secure button calling `CooldownViewerSettings:SetActiveLayoutByID(id)` | Click handler is addon-tainted; relocating the call site does not wash the originating taint. |
+
+**The only `C_CooldownViewer` function without `AllowedWhenUntainted`** is `GetLayoutData()` (read-only). It returns the current serialized blob without raising taint, but there is no companion non-tainted writer.
+
+**Recommended addon-code patterns instead of programmatic switching:**
+
+1. **Lean on the built-in spec-based auto-switch.** `CooldownViewerLayoutManagerMixin:SwitchToBestLayoutForSpec` (`CooldownViewerSettingsLayoutManager.lua:259`) fires automatically from the data provider's `TRAIT_CONFIG_UPDATED` handler (`CooldownViewerSettingsDataProvider.lua:10-15`). If your goal is "switch layouts when the player changes spec," Blizzard already does that; no addon code needed.
+2. **Direct the user to the cooldown-viewer settings UI.** Open the panel with `ShowUIPanel(CooldownViewerSettings)` and let the user pick a layout from the dropdown. Layout switches initiated by Blizzard's own UI run on a clean stack and do not taint.
+3. **Read-only inspection is fine.** Calling `CooldownViewerSettings:GetLayoutManager():GetLayoutByName(name)` to discover layouts, or `C_CooldownViewer.GetLayoutData()` to snapshot the blob to saved-variables for backup, both work from addon code without taint. Restoring a backup, however, requires the user to invoke the import flow through the settings UI — there is no addon-code path to write the blob back.
+
 ### Layout Data Sync Across Characters
 
-Store Blizzard layout data per class in an addon's saved variables via `C_CooldownViewer.GetLayoutData()`, and restore on login with `SetLayoutData()`. This enables cross-character layout sharing:
+> **Caveat:** the snippet below uses `C_CooldownViewer.SetLayoutData(saved)`, which is `AllowedWhenUntainted` in 12.0.0. Calling it from an addon's login handler will fault with a force-taint / secret-value error. The read side (`GetLayoutData`) is safe; the write side is not. Until Blizzard exposes a non-tainted writer, this pattern works only for **read/backup**, not for restore. Track per-class blobs in saved variables for the user's reference, but the user must re-import them through the cooldown-viewer settings UI.
 
 ```lua
--- On logout: save current layout per class
+-- SAFE: snapshot current layout per class to saved variables (read-only side)
 function addon:SaveLayoutForClass()
     local classID = select(3, UnitClass("player"))
     local rawData = C_CooldownViewer.GetLayoutData()
@@ -862,12 +903,13 @@ function addon:SaveLayoutForClass()
     end
 end
 
--- On login: restore layout for this class (if saved)
+-- BLOCKED IN 12.0.0: restoring on login faults because SetLayoutData is AllowedWhenUntainted.
+-- Kept here for reference; do not wire this to login events from addon code.
 function addon:RestoreLayoutForClass()
     local classID = select(3, UnitClass("player"))
     local saved = MyAddonDB.layoutsByClass and MyAddonDB.layoutsByClass[classID]
     if saved then
-        C_CooldownViewer.SetLayoutData(saved)
+        C_CooldownViewer.SetLayoutData(saved) -- AllowedWhenUntainted -- will fault from addon code
     end
 end
 ```
