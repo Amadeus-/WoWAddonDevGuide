@@ -40,7 +40,7 @@ The WoW Claude Code integration uses a **coordinator/worker architecture** desig
 
 **Benefits:**
 - **Context Conservation**: Large documentation files are read in isolated agent context, not your main conversation
-- **Thoroughness**: The agent has full access to all 19 documentation files
+- **Thoroughness**: The agent has full access to all 16 documentation files
 - **Efficiency**: Coordinator stays lightweight; only results return to main conversation
 - **Sub-agent Support**: For very large research tasks, the agent can spawn additional subagents
 
@@ -150,7 +150,7 @@ It does NOT read documentation files directly, keeping your main conversation co
 ### The Worker Agent (WoWAddon-Expert)
 
 The agent runs in an isolated context and:
-- Reads documentation files (all 19 guides)
+- Reads documentation files (all 16 guides)
 - Analyzes existing addons
 - Creates and edits addon files
 - Debugs issues
