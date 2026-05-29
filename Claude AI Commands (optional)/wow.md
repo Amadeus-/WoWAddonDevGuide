@@ -1,3 +1,8 @@
+---
+description: Coordinator for World of Warcraft addon development — addon creation/editing, API & event documentation research, debugging, and code review. Delegates heavy work to the WoWAddon-Expert subagent.
+disable-model-invocation: true
+---
+
 ## User Configuration
 <!-- ============================================================
   EDIT THESE PATHS to match your WoW installation.
@@ -8,7 +13,7 @@
 |---------|------|
 | **AddOns Directory** | `D:\Games\World of Warcraft\_retail_\Interface\AddOns` |
 | **Guide Directory** | `D:\Games\World of Warcraft\_retail_\Interface\+++WoW Addon Development Guide+++` |
-| **Blizzard UI Source** | `D:\Games\World of Warcraft\_retail_\Interface\+wow-ui-source+ (12.0.5)` |
+| **Blizzard UI Source** | `D:\Games\World of Warcraft\_retail_\Interface\+wow-ui-source+ (12.0.0)` |
 
 ---
 
@@ -117,11 +122,10 @@ When reviewing addons with multiple files:
 - **C++ event taint attribution (12.0.0+)**: State-changing C++ API calls from addon code inherently produce tainted events. Neither `securecallfunction` nor `C_Timer.After(0)` prevents this. Options: avoid the calls, accept the taint, or provide a user toggle.
 - **Quest reward data**: `HaveQuestData()` does NOT guarantee rewards are loaded. `GetNumQuestLogRewards()` can transiently return 0. Cache known-good data and use `RequestLoadQuestByID()`.
 - **Cooldown frames (12.0.1+):** `SetCooldown`/`SetCooldownFromExpirationTime`/`SetCooldownDuration`/`SetCooldownUNIX` restricted from tainted code with secrets — use `SetCooldownFromDurationObject` exclusively. `ActionButton_ApplyCooldown` secure delegate removed.
-- **12.0.5 additions:** New numeric formatters (`AbbreviatedNumberFormatter`, `NumericRuleFormatter`, `SecondsFormatter`) accept secrets natively — plug into cooldowns via `SetCountdownFormatter`/`SetCountdownMillisecondsThreshold`. Per-plate nameplate hit rect (`SetHitTestPoints`/`SetAllHitTestPoints`/`CanChangeHitTestPoints`) preferred over global `SetNamePlateSize`. Aura fields `isHelpful`/`isHarmful`/`isRaid`/`isNameplateOnly`/`isFromPlayerOrPlayerPet` NOT secret — safe to classify auras during combat. `auraInstanceID` re-randomizes on encounter/M+/PvP entry — invalidate instance-id caches. `UnitIsUnit`/`UnitName`/`UnitTokenFromGUID` stricter about secret/tainted tokens. `table.freeze`/`table.isfrozen` for read-only tables. `"outfit"` `SecureActionButtonTemplate` action type. `GetRaidRosterInfo` returns `"Unknown"` string (not nil). `UNIT_CONNECTION` fires reliably.
 - **Debug Output**: NEVER output debug info to chat frames. ALWAYS create a scrollable, copy-pasteable window (EditBox with multi-line support) so users can easily select and copy debug output for reporting issues
 - **When researching**: Check Blizzard UI Source (see User Configuration at top of file) for official implementation examples
 - **Markdown files**: When creating/editing .md files, ALWAYS use clickable markdown links for cross-file refs (`[file.md](file.md)`) and intra-file section refs (`[Section](#section)`). Backtick filenames should only be used when referencing a path to a file that could change depending on the system.
-- **After substantive guide changes**: Always check and update these index files as needed: README.md, 00_MASTER_GUIDE.md
+- **After substantive guide changes**: Always check and update these index files as needed: README.md (master index — its `## Version History` section is the KB's update log) and 00_MASTER_GUIDE.md (reference hub + 5-minute tutorial, which absorbed the old QUICK_START_GUIDE content)
 
 ## Workflow
 
